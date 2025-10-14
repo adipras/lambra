@@ -1,9 +1,9 @@
 # Lambra - Progress Tracker
 
-> **Last Updated:** 2025-10-14 (Tested & Verified)
-> **Current Phase:** Phase 1 - COMPLETED & TESTED ✅
-> **Next Phase:** Phase 2 - Core Generator Engine (Ready to Start)
-> **Overall Progress:** 25% (1/4 phases complete)
+> **Last Updated:** 2025-10-14 (UUID Refactoring In Progress)
+> **Current Phase:** Phase 1.5 - UUID & Base Entity Refactoring (70% Complete)
+> **Next Phase:** Phase 2 - Core Generator Engine (After UUID completion)
+> **Overall Progress:** 30% (Phase 1 complete + UUID refactoring ongoing)
 
 ---
 
@@ -63,10 +63,100 @@
 4. ✅ sql.NullString serialization error - Added custom MarshalJSON
 5. ✅ Blank pages for /services/new and /settings - Created missing pages
 
-### 🔄 Phase 2: Core Generator Engine (IN PROGRESS)
+---
+
+## 🔄 Phase 1.5: UUID & Base Entity Refactoring (IN PROGRESS)
+
+**Status:** 70% Complete
+**Started:** 2025-10-14
+**Priority:** High (blocking Phase 2)
+
+### Context
+Before Phase 2 implementation, we're refactoring the entire codebase to use UUID instead of BIGINT for all primary keys, and implementing a BaseEntity pattern with audit fields (createdBy, updatedBy, deletedBy, createdAt, updatedAt, deletedAt).
+
+### ✅ Completed Tasks
+- [x] Created BaseEntity model with UUID and audit fields (models/base.go)
+- [x] Created migration 002_uuid_and_base_entity.up.sql
+- [x] Fixed migration syntax errors (SET FOREIGN_KEY_CHECKS)
+- [x] Successfully applied migration 002 (all tables now use UUID)
+- [x] Updated Makefile to auto-run all migrations in order
+- [x] Updated Project model with BaseEntity embedding
+- [x] Updated GitRepository model with BaseEntity and UUID
+- [x] Updated project_repository.go for UUID (Create, GetByID, GetAll, Update, Delete)
+- [x] Updated project_service.go for UUID and audit fields
+- [x] Updated project handler for UUID (removed ParseInt, accept string IDs)
+- [x] Implemented soft delete for projects
+
+### 🔧 Current Blockers
+1. **Backend compilation errors** - Entity and Endpoint services still use int64
+2. **sqlx scanning issue** - "missing destination name created_by" when scanning into slices
+3. **Old binary running** - Because compilation fails, old code executes
+
+### ⏳ Remaining Tasks
+- [ ] Fix entity_service.go compilation errors (int64 → string UUID)
+- [ ] Fix endpoint_service.go compilation errors (int64 → string UUID)
+- [ ] Update Entity model with BaseEntity and UUID
+- [ ] Update Endpoint model with BaseEntity and UUID
+- [ ] Update Deployment model with BaseEntity and UUID
+- [ ] Update GenerationSnapshot model with BaseEntity and UUID
+- [ ] Update entity_repository.go for UUID
+- [ ] Update endpoint_repository.go for UUID
+- [ ] Fix sqlx embedded struct scanning issue (flatten fields if needed)
+- [ ] Update entity handlers for UUID
+- [ ] Update endpoint handlers for UUID
+- [ ] Test full UUID implementation end-to-end
+- [ ] Update frontend to handle UUID strings instead of integers
+- [ ] Update all API calls in frontend
+
+### Database Schema Changes
+All tables now use:
+- `id CHAR(36) PRIMARY KEY DEFAULT (UUID())` instead of `BIGINT AUTO_INCREMENT`
+- Foreign keys as `CHAR(36)` instead of `BIGINT`
+- Added audit fields: `created_by`, `updated_by`, `deleted_by`, `created_at`, `updated_at`, `deleted_at`
+
+### Code Changes Pattern
+**Before (BIGINT):**
+```go
+type Project struct {
+    ID          int64
+    CreatedAt   time.Time
+    UpdatedAt   time.Time
+}
+```
+
+**After (UUID with BaseEntity):**
+```go
+type Project struct {
+    BaseEntity  // Embeds: ID (string), audit fields, timestamps
+    Name        string
+    // ... other fields
+}
+```
+
+### Testing Status
+- ✅ Migration 001 runs successfully
+- ✅ Migration 002 runs successfully
+- ✅ Database has UUID primary keys verified
+- ✅ Create project generates UUID correctly
+- ⚠️ GET endpoints blocked by compilation errors
+- ⏳ Full API testing pending after fixes
+
+### Next Session Tasks
+1. Fix all compilation errors in entity/endpoint services
+2. Update remaining models (Entity, Endpoint, Deployment, GenerationSnapshot)
+3. Update all repositories for UUID
+4. Fix sqlx scanning issue
+5. Test all CRUD operations
+6. Update frontend UUID handling
+7. Verify end-to-end functionality
+
+---
+
+### 🔄 Phase 2: Core Generator Engine (PENDING)
 **Status:** 0% Complete
-**Target Start:** Next session
+**Target Start:** After Phase 1.5 completion
 **Estimated Duration:** 2-3 days
+**Dependencies:** UUID refactoring must be completed first
 
 **TODO List:**
 - [ ] Template System
@@ -556,8 +646,11 @@ curl http://localhost:8080/health  # Health check
 
 ## 🐛 Known Issues & TODOs
 
-### Current Issues
-- None (Phase 1 complete, everything working)
+### Current Issues (Phase 1.5 - UUID Refactoring)
+1. **Backend compilation errors** - entity_service.go and endpoint_service.go still use int64 for project IDs
+2. **sqlx scanning error** - "missing destination name created_by" when scanning into []models.Project
+3. **Old binary running** - Because compilation fails, API still uses old BIGINT code
+4. **Frontend expects integers** - Frontend still treats IDs as numbers, needs update for UUID strings
 
 ### Technical Debt
 - [ ] Add proper error handling in all handlers
@@ -631,15 +724,22 @@ curl -X POST http://localhost:8080/api/v1/projects \
 | Version | Date | Phase | Changes |
 |---------|------|-------|---------|
 | 1.0.0 | 2025-10-14 | Phase 1 | Initial project setup complete |
+| 1.0.5 | 2025-10-14 | Phase 1.5 | UUID refactoring started (70% complete) |
 | 1.1.0 | TBD | Phase 2 | Core generator engine (pending) |
 | 1.2.0 | TBD | Phase 3 | UI dashboard enhancement (pending) |
 | 1.3.0 | TBD | Phase 4 | Testing & deployment features (pending) |
 
 ---
 
-**Last Review:** 2025-10-14
-**Next Review:** Start of next session
+**Last Review:** 2025-10-14 (End of Day - UUID Refactoring Session)
+**Next Review:** Start of next session (Continue UUID refactoring)
 **Maintained By:** Development Team
+
+**Note for Next Session:**
+- Backend has compilation errors that must be fixed before continuing
+- Focus on fixing entity_service.go and endpoint_service.go first
+- Then update remaining models and repositories
+- Test thoroughly before moving to Phase 2
 
 ---
 

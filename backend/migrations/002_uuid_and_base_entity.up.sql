@@ -1,16 +1,21 @@
 -- Migration to convert IDs to UUID and add base entity fields
 -- This migration will recreate tables with UUID primary keys
 
--- Drop existing tables (in reverse order of dependencies)
+-- Temporarily disable foreign key checks to drop tables
+SET FOREIGN_KEY_CHECKS = 0;
+
+-- Drop all existing tables
 DROP TABLE IF EXISTS deployment_logs;
 DROP TABLE IF EXISTS deployments;
 DROP TABLE IF EXISTS generation_snapshots;
 DROP TABLE IF EXISTS endpoints;
 DROP TABLE IF EXISTS entities;
-ALTER TABLE projects DROP FOREIGN KEY IF EXISTS fk_projects_git_repo;
 DROP TABLE IF EXISTS git_repositories;
 DROP TABLE IF EXISTS templates;
 DROP TABLE IF EXISTS projects;
+
+-- Re-enable foreign key checks
+SET FOREIGN_KEY_CHECKS = 1;
 
 -- Projects table with UUID
 CREATE TABLE IF NOT EXISTS projects (

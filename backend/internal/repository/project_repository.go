@@ -17,27 +17,40 @@ func NewProjectRepository(db *sqlx.DB) *ProjectRepository {
 }
 
 func (r *ProjectRepository) Create(project *models.Project) error {
+	// Generate UUID using database function
+	var generatedID string
+	err := r.db.Get(&generatedID, "SELECT UUID()")
+	if err != nil {
+		return fmt.Errorf("failed to generate UUID: %w", err)
+	}
+
 	query := `
-		INSERT INTO projects (name, description, status, namespace, created_at, updated_at)
-		VALUES (?, ?, ?, ?, NOW(), NOW())
+		INSERT INTO projects (id, name, description, status, namespace, created_by, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
 	`
-	result, err := r.db.Exec(query, project.Name, project.Description, project.Status, project.Namespace)
+	_, err = r.db.Exec(query, generatedID, project.Name, project.Description, project.Status, project.Namespace, project.CreatedBy)
 	if err != nil {
 		return fmt.Errorf("failed to create project: %w", err)
 	}
 
-	id, err := result.LastInsertId()
+	// Get the created project to populate all fields including timestamps
+	createdProject, err := r.GetByID(generatedID)
 	if err != nil {
-		return fmt.Errorf("failed to get last insert id: %w", err)
+		return fmt.Errorf("failed to retrieve created project: %w", err)
 	}
 
-	project.ID = id
+	*project = *createdProject
 	return nil
 }
 
-func (r *ProjectRepository) GetByID(id int64) (*models.Project, error) {
+func (r *ProjectRepository) GetByID(id string) (*models.Project, error) {
 	var project models.Project
-	query := `SELECT * FROM projects WHERE id = ?`
+	query := `
+		SELECT id, name, description, status, namespace, git_repo_id,
+		       created_by, updated_by, deleted_by, created_at, updated_at, deleted_at
+		FROM projects
+		WHERE id = ? AND deleted_at IS NULL
+	`
 
 	err := r.db.Get(&project, query, id)
 	if err == sql.ErrNoRows {
@@ -52,7 +65,14 @@ func (r *ProjectRepository) GetByID(id int64) (*models.Project, error) {
 
 func (r *ProjectRepository) GetAll(limit, offset int) ([]models.Project, int64, error) {
 	var projects []models.Project
-	query := `SELECT * FROM projects ORDER BY created_at DESC LIMIT ? OFFSET ?`
+	query := `
+		SELECT id, name, description, status, namespace, git_repo_id,
+		       created_by, updated_by, deleted_by, created_at, updated_at, deleted_at
+		FROM projects
+		WHERE deleted_at IS NULL
+		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?
+	`
 
 	err := r.db.Select(&projects, query, limit, offset)
 	if err != nil {
@@ -60,7 +80,7 @@ func (r *ProjectRepository) GetAll(limit, offset int) ([]models.Project, int64, 
 	}
 
 	var total int64
-	countQuery := `SELECT COUNT(*) FROM projects`
+	countQuery := `SELECT COUNT(*) FROM projects WHERE deleted_at IS NULL`
 	err = r.db.Get(&total, countQuery)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to count projects: %w", err)
@@ -72,10 +92,10 @@ func (r *ProjectRepository) GetAll(limit, offset int) ([]models.Project, int64, 
 func (r *ProjectRepository) Update(project *models.Project) error {
 	query := `
 		UPDATE projects
-		SET name = ?, description = ?, status = ?, namespace = ?, updated_at = NOW()
-		WHERE id = ?
+		SET name = ?, description = ?, status = ?, namespace = ?, updated_by = ?, updated_at = NOW()
+		WHERE id = ? AND deleted_at IS NULL
 	`
-	_, err := r.db.Exec(query, project.Name, project.Description, project.Status, project.Namespace, project.ID)
+	_, err := r.db.Exec(query, project.Name, project.Description, project.Status, project.Namespace, project.UpdatedBy, project.ID)
 	if err != nil {
 		return fmt.Errorf("failed to update project: %w", err)
 	}
@@ -83,8 +103,8 @@ func (r *ProjectRepository) Update(project *models.Project) error {
 	return nil
 }
 
-func (r *ProjectRepository) UpdateStatus(id int64, status string) error {
-	query := `UPDATE projects SET status = ?, updated_at = NOW() WHERE id = ?`
+func (r *ProjectRepository) UpdateStatus(id string, status string) error {
+	query := `UPDATE projects SET status = ?, updated_at = NOW() WHERE id = ? AND deleted_at IS NULL`
 	_, err := r.db.Exec(query, status, id)
 	if err != nil {
 		return fmt.Errorf("failed to update project status: %w", err)
@@ -93,9 +113,10 @@ func (r *ProjectRepository) UpdateStatus(id int64, status string) error {
 	return nil
 }
 
-func (r *ProjectRepository) Delete(id int64) error {
-	query := `DELETE FROM projects WHERE id = ?`
-	_, err := r.db.Exec(query, id)
+func (r *ProjectRepository) Delete(id string, deletedBy string) error {
+	// Soft delete
+	query := `UPDATE projects SET deleted_by = ?, deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL`
+	_, err := r.db.Exec(query, deletedBy, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete project: %w", err)
 	}
@@ -103,7 +124,7 @@ func (r *ProjectRepository) Delete(id int64) error {
 	return nil
 }
 
-func (r *ProjectRepository) GetWithGitRepo(id int64) (*models.ProjectWithRelations, error) {
+func (r *ProjectRepository) GetWithGitRepo(id string) (*models.ProjectWithRelations, error) {
 	project, err := r.GetByID(id)
 	if err != nil {
 		return nil, err
@@ -116,8 +137,8 @@ func (r *ProjectRepository) GetWithGitRepo(id int64) (*models.ProjectWithRelatio
 	// Get Git repository if exists
 	if project.GitRepoID.Valid {
 		var gitRepo models.GitRepository
-		query := `SELECT * FROM git_repositories WHERE id = ?`
-		err = r.db.Get(&gitRepo, query, project.GitRepoID.Int64)
+		query := `SELECT * FROM git_repositories WHERE id = ? AND deleted_at IS NULL`
+		err = r.db.Get(&gitRepo, query, project.GitRepoID.String)
 		if err == nil {
 			result.GitRepo = &gitRepo
 		}

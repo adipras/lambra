@@ -34,9 +34,9 @@ func (h *ProjectHandler) CreateProject(c *gin.Context) {
 }
 
 func (h *ProjectHandler) GetProject(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		response.BadRequest(c, "Invalid project ID", err)
+	id := c.Param("id")
+	if id == "" {
+		response.BadRequest(c, "Invalid project ID", nil)
 		return
 	}
 
@@ -75,9 +75,9 @@ func (h *ProjectHandler) GetAllProjects(c *gin.Context) {
 }
 
 func (h *ProjectHandler) UpdateProject(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		response.BadRequest(c, "Invalid project ID", err)
+	id := c.Param("id")
+	if id == "" {
+		response.BadRequest(c, "Invalid project ID", nil)
 		return
 	}
 
@@ -97,13 +97,13 @@ func (h *ProjectHandler) UpdateProject(c *gin.Context) {
 }
 
 func (h *ProjectHandler) DeleteProject(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		response.BadRequest(c, "Invalid project ID", err)
+	id := c.Param("id")
+	if id == "" {
+		response.BadRequest(c, "Invalid project ID", nil)
 		return
 	}
 
-	err = h.service.DeleteProject(id)
+	err := h.service.DeleteProject(id)
 	if err != nil {
 		response.InternalError(c, "Failed to delete project", err)
 		return

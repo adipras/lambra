@@ -39,16 +39,22 @@ build:
 	docker-compose build
 
 migrate-up:
-	@echo "Applying database migrations..."
-	docker cp backend/migrations/001_initial_schema.up.sql lambra-mysql:/tmp/
-	docker-compose exec mysql sh -c "mysql -ulambra -plambra_secret lambra_db < /tmp/001_initial_schema.up.sql"
-	@echo "Migrations applied successfully!"
+	@echo "Applying all database migrations..."
+	@for file in backend/migrations/*.up.sql; do \
+		echo "Applying $$file..."; \
+		docker cp $$file lambra-mysql:/tmp/migration.sql; \
+		docker-compose exec mysql sh -c "mysql -ulambra -plambra_secret lambra_db < /tmp/migration.sql" || exit 1; \
+	done
+	@echo "All migrations applied successfully!"
 
 migrate-down:
-	@echo "Rolling back database migrations..."
-	docker cp backend/migrations/001_initial_schema.down.sql lambra-mysql:/tmp/
-	docker-compose exec mysql sh -c "mysql -ulambra -plambra_secret lambra_db < /tmp/001_initial_schema.down.sql"
-	@echo "Migrations rolled back successfully!"
+	@echo "Rolling back all database migrations..."
+	@for file in $$(ls -r backend/migrations/*.down.sql); do \
+		echo "Rolling back $$file..."; \
+		docker cp $$file lambra-mysql:/tmp/migration.sql; \
+		docker-compose exec mysql sh -c "mysql -ulambra -plambra_secret lambra_db < /tmp/migration.sql" || exit 1; \
+	done
+	@echo "All migrations rolled back successfully!"
 
 backend-sh:
 	docker-compose exec backend sh

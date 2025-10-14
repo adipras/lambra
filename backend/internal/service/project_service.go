@@ -18,14 +18,17 @@ func NewProjectService(repo *repository.ProjectRepository) *ProjectService {
 
 func (s *ProjectService) CreateProject(req *models.CreateProjectRequest) (*models.Project, error) {
 	project := &models.Project{
-		Name:        req.Name,
-		Namespace:   req.Namespace,
-		Status:      models.ProjectStatusActive,
+		Name:      req.Name,
+		Namespace: req.Namespace,
+		Status:    models.ProjectStatusActive,
 	}
 
 	if req.Description != "" {
 		project.Description = sql.NullString{String: req.Description, Valid: true}
 	}
+
+	// Set created_by (in future, get from auth context)
+	project.SetCreatedBy("system")
 
 	err := s.repo.Create(project)
 	if err != nil {
@@ -35,11 +38,11 @@ func (s *ProjectService) CreateProject(req *models.CreateProjectRequest) (*model
 	return project, nil
 }
 
-func (s *ProjectService) GetProject(id int64) (*models.Project, error) {
+func (s *ProjectService) GetProject(id string) (*models.Project, error) {
 	return s.repo.GetByID(id)
 }
 
-func (s *ProjectService) GetProjectWithRelations(id int64) (*models.ProjectWithRelations, error) {
+func (s *ProjectService) GetProjectWithRelations(id string) (*models.ProjectWithRelations, error) {
 	return s.repo.GetWithGitRepo(id)
 }
 
@@ -55,7 +58,7 @@ func (s *ProjectService) GetAllProjects(page, limit int) ([]models.Project, int6
 	return s.repo.GetAll(limit, offset)
 }
 
-func (s *ProjectService) UpdateProject(id int64, req *models.UpdateProjectRequest) (*models.Project, error) {
+func (s *ProjectService) UpdateProject(id string, req *models.UpdateProjectRequest) (*models.Project, error) {
 	project, err := s.repo.GetByID(id)
 	if err != nil {
 		return nil, err
@@ -71,6 +74,9 @@ func (s *ProjectService) UpdateProject(id int64, req *models.UpdateProjectReques
 		project.Status = req.Status
 	}
 
+	// Set updated_by (in future, get from auth context)
+	project.SetUpdatedBy("system")
+
 	err = s.repo.Update(project)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update project: %w", err)
@@ -79,11 +85,12 @@ func (s *ProjectService) UpdateProject(id int64, req *models.UpdateProjectReques
 	return project, nil
 }
 
-func (s *ProjectService) DeleteProject(id int64) error {
+func (s *ProjectService) DeleteProject(id string) error {
 	_, err := s.repo.GetByID(id)
 	if err != nil {
 		return err
 	}
 
-	return s.repo.Delete(id)
+	// Soft delete with deleted_by (in future, get from auth context)
+	return s.repo.Delete(id, "system")
 }
