@@ -1,0 +1,40 @@
+# Makefile for {{.ServiceName}}
+
+.PHONY: help build up down logs restart clean
+
+help:
+	@echo "Available commands:"
+	@echo "  make build    - Build Docker images"
+	@echo "  make up       - Start services"
+	@echo "  make down     - Stop services"
+	@echo "  make logs     - View logs"
+	@echo "  make restart  - Restart services"
+	@echo "  make clean    - Remove all containers and volumes"
+
+build:
+	docker-compose build
+
+up:
+	docker-compose up -d
+
+down:
+	docker-compose down
+
+logs:
+	docker-compose logs -f
+
+restart:
+	docker-compose restart
+
+clean:
+	docker-compose down -v
+	docker system prune -f
+
+dev:
+	docker-compose up
+
+migrate-up:
+	docker-compose exec {{.ServiceName}} sh -c "cd /root/migrations && for f in *.up.sql; do mysql -h{{.ServiceName}}-db -u{{.DatabaseUser}} -p{{.DatabasePassword}} {{.DatabaseName}} < \$\$f; done"
+
+migrate-down:
+	docker-compose exec {{.ServiceName}} sh -c "cd /root/migrations && for f in *.down.sql; do mysql -h{{.ServiceName}}-db -u{{.DatabaseUser}} -p{{.DatabasePassword}} {{.DatabaseName}} < \$\$f; done"

@@ -1,0 +1,121 @@
+# {{.ServiceName}}
+
+Generated microservice by Lambra Platform.
+
+## Description
+{{.Description}}
+
+## Tech Stack
+- Golang (Gin Framework)
+- MySQL Database
+- Docker & Docker Compose
+
+## Quick Start
+
+### Prerequisites
+- Docker
+- Docker Compose
+
+### Running the Service
+
+1. **Start the service:**
+```bash
+make up
+# or
+docker-compose up -d
+```
+
+2. **View logs:**
+```bash
+make logs
+# or
+docker-compose logs -f
+```
+
+3. **Stop the service:**
+```bash
+make down
+# or
+docker-compose down
+```
+
+## Configuration
+
+Environment variables can be configured in `.env` file or `docker-compose.yml`.
+
+## API Endpoints
+
+Base URL: `http://localhost:{{.Port}}/api/v1`
+
+### Health Check
+- `GET /health` - Health check endpoint
+- `GET /ready` - Readiness check endpoint
+
+{{range .Endpoints}}
+### {{.Name}}
+- **Method:** {{.Method}}
+- **Path:** {{.Path}}
+- **Description:** {{.Description}}
+- **Auth Required:** {{.RequireAuth}}
+{{end}}
+
+## Database
+
+- **Host:** localhost
+- **Port:** {{.DatabasePort}}
+- **Database:** {{.DatabaseName}}
+- **User:** {{.DatabaseUser}}
+
+## Development
+
+### Hot Reload
+For development with hot reload, use:
+```bash
+make dev
+# or
+docker-compose up
+```
+
+### Database Migrations
+
+**Apply migrations:**
+```bash
+make migrate-up
+```
+
+**Rollback migrations:**
+```bash
+make migrate-down
+```
+
+## Project Structure
+
+```
+{{.ServiceName}}/
+├── cmd/
+│   └── server/
+│       └── main.go
+├── internal/
+│   ├── api/
+│   │   ├── handlers/
+│   │   ├── middleware/
+│   │   └── router/
+│   ├── models/
+│   ├── repository/
+│   └── service/
+├── migrations/
+├── docker-compose.yml
+├── Dockerfile
+├── Makefile
+└── README.md
+```
+
+## Generated Information
+
+- **Generated At:** {{.GeneratedAt}}
+- **Version:** {{.Version}}
+- **Snapshot ID:** {{.SnapshotID}}
+
+---
+
+Generated with Lambra Platform

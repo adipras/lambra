@@ -1,0 +1,131 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: project-name
+  labels:
+    svc: project-name
+    tier: backend
+  namespace: namespaces
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      svc: project-name
+      tier: backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  revisionHistoryLimit: 5
+  template:
+    metadata:
+      labels:
+        svc: project-name
+        tier: backend
+    spec:
+      imagePullSecrets:
+        - name: harbor-uii-key
+      containers:
+        - name: project-name
+          image: images
+          imagePullPolicy: Always
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              memory: 64Mi
+          env:
+            - name: DB_DRIVERNAME
+              value: "mysql"
+            - name: DB_USERNAME
+              value: "default"
+            - name: DB_PASSWORD
+              value: "default"
+            - name: DB_HOST
+              value: "dbproduction.bsi.io"
+            - name: DB_PORT
+              value: "6033"
+            - name: DB_NAME
+              value: "boilerplate_go"
+            - name: PORT
+              value: "80"
+            - name: ORACLE_DB_DRIVERNAME
+              value: "godror"
+            - name: ORACLE_DB_USERNAME
+              value: "webservice_keubank"
+            - name: ORACLE_DB_PASSWORD
+              value: "webS3rvicek3ubankU11#2018"
+            - name: ORACLE_DB_HOST
+              value: "192.168.8.12"
+            - name: ORACLE_DB_PORT
+              value: "1521"
+            - name: ORACLE_DB_SERVICE_NAME
+              value: "transdb1"
+            - name: ENV
+              value: "production"
+            - name: GIN_MODE
+              value: "release"
+          ports:
+            - name: http-api
+              containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: project-name
+  labels:
+    svc: project-name
+    tier: backend
+  namespace: namespaces
+  annotations:
+    getambassador.io/config: |
+      ---
+      apiVersion: getambassador.io/v3alpha1
+      kind: Mapping
+      metadata:
+        name: project-name-mapping-v1
+      spec:
+        prefix: /v1/finance/boilerplate
+        rewrite: /public/api/v1
+        service: project-name.namespaces
+        timeout_ms: 60000
+        hostname: '*'
+spec:
+  selector:
+    svc: project-name
+    tier: backend
+  ports:
+    - name: http-api
+      port: 80
+      targetPort: http-api
+      protocol: TCP
+---
+apiVersion: autoscaling/v2beta2
+kind: HorizontalPodAutoscaler
+metadata:
+  labels:
+    svc: project-name
+    tier: backend
+  name: project-name
+  namespace: namespaces
+spec:
+  maxReplicas: 5
+  minReplicas: 3
+  scaleTargetRef:
+    apiVersion: apps/v1beta2
+    kind: Deployment
+    name: project-name
+  metrics:
+    - resource:
+        name: memory
+        target:
+          averageUtilization: 50
+          type: Utilization
+      type: Resource
+  scaleTargetRef:
+    apiVersion: apps/v1beta2
+    kind: Deployment
+    name: project-name

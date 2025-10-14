@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: lambra-mysql-prod
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: lambra_db
+      MYSQL_USER: lambra
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data_prod:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lambra-network
+
+  # Backend API (Production)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: lambra-backend-prod
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      ENV: production
+      GIN_MODE: release
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: lambra
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+      DB_NAME: lambra_db
+      WORKSPACE_PATH: /workspace
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - lambra_workspace_prod:/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - lambra-network
+    restart: always
+
+  # Frontend (Production)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: lambra-frontend-prod
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - lambra-network
+    restart: always
+
+volumes:
+  mysql_data_prod:
+    driver: local
+  lambra_workspace_prod:
+    driver: local
+
+networks:
+  lambra-network:
+    driver: bridge

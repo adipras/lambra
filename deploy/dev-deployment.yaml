@@ -1,0 +1,104 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: project-name
+  labels:
+    svc: project-name
+    tier: backend
+  namespace: namespaces
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      svc: project-name
+      tier: backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  revisionHistoryLimit: 5
+  template:
+    metadata:
+      labels:
+        svc: project-name
+        tier: backend
+    spec:
+      imagePullSecrets:
+        - name: harbor-uii-key
+      containers:
+        - name: project-name
+          image: images
+          imagePullPolicy: Always
+          resources:
+            requests:
+              cpu: 1m
+              memory: 32Mi
+            limits:
+              memory: 32Mi
+          env:
+            - name: DB_DRIVERNAME
+              value: "mysql"
+            - name: DB_USERNAME
+              value: "dev"
+            - name: DB_PASSWORD
+              value: "bismillah"
+            - name: DB_HOST
+              value: "dbdev.bsi.io"
+            - name: DB_PORT
+              value: "6033"
+            - name: DB_NAME
+              value: "boilerplate_go"
+            - name: ORACLE_DB_DRIVERNAME
+              value: "godror"
+            - name: ORACLE_DB_USERNAME
+              value: "keubank"
+            - name: ORACLE_DB_PASSWORD
+              value: "testing#"
+            - name: ORACLE_DB_HOST
+              value: "10.30.20.18"
+            - name: ORACLE_DB_PORT
+              value: "1521"
+            - name: ORACLE_DB_SERVICE_NAME
+              value: "transdb1"
+            - name: PORT
+              value: "80"
+            - name: ENV
+              value: "dev"
+            - name: GIN_MODE
+              value: "release"
+          ports:
+            - name: http-api
+              containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: project-name
+  labels:
+    svc: project-name
+    tier: backend
+  namespace: namespaces
+  annotations:
+    getambassador.io/config: |
+      ---
+      apiVersion: getambassador.io/v3alpha1
+      kind: Mapping
+      metadata:
+        name: project-name-mapping-v1
+      spec:
+        prefix: /v1/finance/boilerplate
+        rewrite: /public/api/v1
+        service: project-name.namespaces
+        timeout_ms: 60000
+        hostname: '*'
+spec:
+  selector:
+    svc: project-name
+    tier: backend
+  ports:
+    - name: http-api
+      port: 80
+      targetPort: http-api
+      protocol: TCP

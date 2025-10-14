@@ -1,0 +1,61 @@
+# Docker Compose for generated service: {{.ServiceName}}
+version: '3.8'
+
+services:
+  # Service Database
+  {{.ServiceName}}-db:
+    image: mysql:8.0
+    container_name: {{.ServiceName}}-db
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: {{.DatabaseName}}
+      MYSQL_USER: {{.DatabaseUser}}
+      MYSQL_PASSWORD: {{.DatabasePassword}}
+    ports:
+      - "{{.DatabasePort}}:3306"
+    volumes:
+      - {{.ServiceName}}_db_data:/var/lib/mysql
+      - ./migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - {{.ServiceName}}-network
+
+  # Service Application
+  {{.ServiceName}}:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: {{.ServiceName}}
+    ports:
+      - "{{.Port}}:{{.Port}}"
+    environment:
+      PORT: {{.Port}}
+      ENV: {{.Environment}}
+      GIN_MODE: {{.GinMode}}
+      DB_DRIVERNAME: mysql
+      DB_HOST: {{.ServiceName}}-db
+      DB_PORT: 3306
+      DB_USERNAME: {{.DatabaseUser}}
+      DB_PASSWORD: {{.DatabasePassword}}
+      DB_NAME: {{.DatabaseName}}
+    depends_on:
+      {{.ServiceName}}-db:
+        condition: service_healthy
+    networks:
+      - {{.ServiceName}}-network
+      - lambra_lambra-network  # Connect to Lambra network
+    restart: unless-stopped
+
+volumes:
+  {{.ServiceName}}_db_data:
+    driver: local
+
+networks:
+  {{.ServiceName}}-network:
+    driver: bridge
+  lambra_lambra-network:
+    external: true
