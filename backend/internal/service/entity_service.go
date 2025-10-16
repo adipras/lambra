@@ -21,8 +21,8 @@ func NewEntityService(repo *repository.EntityRepository, projectRepo *repository
 }
 
 func (s *EntityService) CreateEntity(req *models.CreateEntityRequest) (*models.Entity, error) {
-	// Validate project exists
-	_, err := s.projectRepo.GetByID(req.ProjectID)
+	// Validate project exists and get internal ID
+	project, err := s.projectRepo.GetByUUID(req.ProjectUUID)
 	if err != nil {
 		return nil, fmt.Errorf("project not found: %w", err)
 	}
@@ -34,16 +34,19 @@ func (s *EntityService) CreateEntity(req *models.CreateEntityRequest) (*models.E
 	}
 
 	entity := &models.Entity{
-		ProjectID:   req.ProjectID,
-		Name:        req.Name,
-		TableName:   req.TableName,
-		Fields:      fieldsJSON,
+		ProjectID: project.ID, // Use internal project ID
+		Name:      req.Name,
+		TableName: req.TableName,
+		Fields:    fieldsJSON,
 	}
 
 	if req.Description != "" {
 		entity.Description.String = req.Description
 		entity.Description.Valid = true
 	}
+
+	// Set created_by (in future, get from auth context)
+	entity.SetCreatedBy("system")
 
 	err = s.repo.Create(entity)
 	if err != nil {
@@ -53,22 +56,22 @@ func (s *EntityService) CreateEntity(req *models.CreateEntityRequest) (*models.E
 	return entity, nil
 }
 
-func (s *EntityService) GetEntity(id int64) (*models.Entity, error) {
-	return s.repo.GetByID(id)
+func (s *EntityService) GetEntityByUUID(uuid string) (*models.Entity, error) {
+	return s.repo.GetByUUID(uuid)
 }
 
-func (s *EntityService) GetEntitiesByProject(projectID int64) ([]models.Entity, error) {
-	// Validate project exists
-	_, err := s.projectRepo.GetByID(projectID)
+func (s *EntityService) GetEntitiesByProjectUUID(projectUUID string) ([]models.Entity, error) {
+	// Validate project exists and get internal ID
+	project, err := s.projectRepo.GetByUUID(projectUUID)
 	if err != nil {
 		return nil, fmt.Errorf("project not found: %w", err)
 	}
 
-	return s.repo.GetByProjectID(projectID)
+	return s.repo.GetByProjectID(project.ID)
 }
 
-func (s *EntityService) UpdateEntity(id int64, req *models.UpdateEntityRequest) (*models.Entity, error) {
-	entity, err := s.repo.GetByID(id)
+func (s *EntityService) UpdateEntity(uuid string, req *models.UpdateEntityRequest) (*models.Entity, error) {
+	entity, err := s.repo.GetByUUID(uuid)
 	if err != nil {
 		return nil, err
 	}
@@ -91,6 +94,9 @@ func (s *EntityService) UpdateEntity(id int64, req *models.UpdateEntityRequest) 
 		entity.Fields = fieldsJSON
 	}
 
+	// Set updated_by (in future, get from auth context)
+	entity.SetUpdatedBy("system")
+
 	err = s.repo.Update(entity)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update entity: %w", err)
@@ -99,11 +105,12 @@ func (s *EntityService) UpdateEntity(id int64, req *models.UpdateEntityRequest) 
 	return entity, nil
 }
 
-func (s *EntityService) DeleteEntity(id int64) error {
-	_, err := s.repo.GetByID(id)
+func (s *EntityService) DeleteEntity(uuid string) error {
+	_, err := s.repo.GetByUUID(uuid)
 	if err != nil {
 		return err
 	}
 
-	return s.repo.Delete(id)
+	// Soft delete with deleted_by (in future, get from auth context)
+	return s.repo.DeleteByUUID(uuid, "system")
 }

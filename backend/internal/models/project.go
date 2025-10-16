@@ -11,7 +11,7 @@ type Project struct {
 	Name        string         `db:"name" json:"name"`
 	Description sql.NullString `db:"description" json:"-"`
 	Status      string         `db:"status" json:"status"` // active, generating, failed, archived
-	GitRepoID   sql.NullString `db:"git_repo_id" json:"-"` // UUID
+	GitRepoID   sql.NullInt64  `db:"git_repo_id" json:"-"` // Foreign key to git_repositories.id
 	Namespace   string         `db:"namespace" json:"namespace"` // k8s namespace
 }
 
@@ -19,17 +19,15 @@ type Project struct {
 func (p Project) MarshalJSON() ([]byte, error) {
 	return json.Marshal(&struct {
 		BaseEntityJSON
-		Name        string  `json:"name"`
-		Description string  `json:"description,omitempty"`
-		Status      string  `json:"status"`
-		GitRepoID   *string `json:"git_repo_id,omitempty"`
-		Namespace   string  `json:"namespace"`
+		Name        string `json:"name"`
+		Description string `json:"description,omitempty"`
+		Status      string `json:"status"`
+		Namespace   string `json:"namespace"`
 	}{
 		BaseEntityJSON: p.BaseEntity.ToJSON(),
 		Name:           p.Name,
 		Description:    p.Description.String,
 		Status:         p.Status,
-		GitRepoID:      func() *string { if p.GitRepoID.Valid { return &p.GitRepoID.String }; return nil }(),
 		Namespace:      p.Namespace,
 	})
 }

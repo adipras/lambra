@@ -3,19 +3,33 @@ package models
 import (
 	"database/sql"
 	"encoding/json"
-	"time"
 )
 
 // Entity represents a data entity within a project
 type Entity struct {
-	ID          int64           `db:"id" json:"id"`
-	ProjectID   int64           `db:"project_id" json:"project_id"`
+	BaseEntity
+	ProjectID   int64           `db:"project_id" json:"-"` // FK to projects.id (internal)
 	Name        string          `db:"name" json:"name"`
 	TableName   string          `db:"table_name" json:"table_name"`
-	Description sql.NullString  `db:"description" json:"description,omitempty"`
+	Description sql.NullString  `db:"description" json:"-"`
 	Fields      json.RawMessage `db:"fields" json:"fields"` // JSON array of fields
-	CreatedAt   time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt   time.Time       `db:"updated_at" json:"updated_at"`
+}
+
+// MarshalJSON custom JSON marshaling for Entity
+func (e Entity) MarshalJSON() ([]byte, error) {
+	return json.Marshal(&struct {
+		BaseEntityJSON
+		Name        string          `json:"name"`
+		TableName   string          `json:"table_name"`
+		Description string          `json:"description,omitempty"`
+		Fields      json.RawMessage `json:"fields"`
+	}{
+		BaseEntityJSON: e.BaseEntity.ToJSON(),
+		Name:           e.Name,
+		TableName:      e.TableName,
+		Description:    e.Description.String,
+		Fields:         e.Fields,
+	})
 }
 
 // EntityField represents a field in an entity
@@ -37,7 +51,7 @@ type EntityWithEndpoints struct {
 
 // CreateEntityRequest for creating a new entity
 type CreateEntityRequest struct {
-	ProjectID   int64         `json:"project_id" binding:"required"`
+	ProjectUUID string        `json:"project_id" binding:"required"` // Accepts project UUID from frontend
 	Name        string        `json:"name" binding:"required,min=2,max=100"`
 	TableName   string        `json:"table_name" binding:"required,min=2,max=100"`
 	Description string        `json:"description" binding:"max=500"`

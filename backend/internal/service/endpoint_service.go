@@ -22,21 +22,15 @@ func NewEndpointService(repo *repository.EndpointRepository, entityRepo *reposit
 }
 
 func (s *EndpointService) CreateEndpoint(req *models.CreateEndpointRequest) (*models.Endpoint, error) {
-	// Validate entity exists
-	_, err := s.entityRepo.GetByID(req.EntityID)
+	// Validate entity exists and get internal ID
+	entity, err := s.entityRepo.GetByUUID(req.EntityUUID)
 	if err != nil {
 		return nil, fmt.Errorf("entity not found: %w", err)
 	}
 
-	// Validate project exists
-	_, err = s.projectRepo.GetByID(req.ProjectID)
-	if err != nil {
-		return nil, fmt.Errorf("project not found: %w", err)
-	}
-
 	endpoint := &models.Endpoint{
-		EntityID:       req.EntityID,
-		ProjectID:      req.ProjectID,
+		EntityID:       entity.ID,      // Use internal entity ID
+		ProjectID:      entity.ProjectID, // Get project ID from entity
 		Name:           req.Name,
 		Path:           req.Path,
 		Method:         req.Method,
@@ -50,6 +44,9 @@ func (s *EndpointService) CreateEndpoint(req *models.CreateEndpointRequest) (*mo
 		endpoint.Description.Valid = true
 	}
 
+	// Set created_by (in future, get from auth context)
+	endpoint.SetCreatedBy("system")
+
 	err = s.repo.Create(endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create endpoint: %w", err)
@@ -58,32 +55,32 @@ func (s *EndpointService) CreateEndpoint(req *models.CreateEndpointRequest) (*mo
 	return endpoint, nil
 }
 
-func (s *EndpointService) GetEndpoint(id int64) (*models.Endpoint, error) {
-	return s.repo.GetByID(id)
+func (s *EndpointService) GetEndpointByUUID(uuid string) (*models.Endpoint, error) {
+	return s.repo.GetByUUID(uuid)
 }
 
-func (s *EndpointService) GetEndpointsByProject(projectID int64) ([]models.Endpoint, error) {
-	// Validate project exists
-	_, err := s.projectRepo.GetByID(projectID)
+func (s *EndpointService) GetEndpointsByProjectUUID(projectUUID string) ([]models.Endpoint, error) {
+	// Validate project exists and get internal ID
+	project, err := s.projectRepo.GetByUUID(projectUUID)
 	if err != nil {
 		return nil, fmt.Errorf("project not found: %w", err)
 	}
 
-	return s.repo.GetByProjectID(projectID)
+	return s.repo.GetByProjectID(project.ID)
 }
 
-func (s *EndpointService) GetEndpointsByEntity(entityID int64) ([]models.Endpoint, error) {
-	// Validate entity exists
-	_, err := s.entityRepo.GetByID(entityID)
+func (s *EndpointService) GetEndpointsByEntityUUID(entityUUID string) ([]models.Endpoint, error) {
+	// Validate entity exists and get internal ID
+	entity, err := s.entityRepo.GetByUUID(entityUUID)
 	if err != nil {
 		return nil, fmt.Errorf("entity not found: %w", err)
 	}
 
-	return s.repo.GetByEntityID(entityID)
+	return s.repo.GetByEntityID(entity.ID)
 }
 
-func (s *EndpointService) UpdateEndpoint(id int64, req *models.UpdateEndpointRequest) (*models.Endpoint, error) {
-	endpoint, err := s.repo.GetByID(id)
+func (s *EndpointService) UpdateEndpoint(uuid string, req *models.UpdateEndpointRequest) (*models.Endpoint, error) {
+	endpoint, err := s.repo.GetByUUID(uuid)
 	if err != nil {
 		return nil, err
 	}
@@ -111,6 +108,9 @@ func (s *EndpointService) UpdateEndpoint(id int64, req *models.UpdateEndpointReq
 		endpoint.RequireAuth = *req.RequireAuth
 	}
 
+	// Set updated_by (in future, get from auth context)
+	endpoint.SetUpdatedBy("system")
+
 	err = s.repo.Update(endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update endpoint: %w", err)
@@ -119,11 +119,12 @@ func (s *EndpointService) UpdateEndpoint(id int64, req *models.UpdateEndpointReq
 	return endpoint, nil
 }
 
-func (s *EndpointService) DeleteEndpoint(id int64) error {
-	_, err := s.repo.GetByID(id)
+func (s *EndpointService) DeleteEndpoint(uuid string) error {
+	_, err := s.repo.GetByUUID(uuid)
 	if err != nil {
 		return err
 	}
 
-	return s.repo.Delete(id)
+	// Soft delete with deleted_by (in future, get from auth context)
+	return s.repo.DeleteByUUID(uuid, "system")
 }

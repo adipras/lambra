@@ -8,7 +8,7 @@ import (
 // GitRepository represents a Git repository
 type GitRepository struct {
 	BaseEntity
-	ProjectID        string         `db:"project_id" json:"project_id"`
+	ProjectID        int64          `db:"project_id" json:"-"` // FK to projects.id (internal)
 	RepoURL          string         `db:"repo_url" json:"repo_url"`
 	RepoName         string         `db:"repo_name" json:"repo_name"`
 	GitLabRepoID     int64          `db:"gitlab_repo_id" json:"gitlab_repo_id"`
@@ -23,7 +23,6 @@ type GitRepository struct {
 func (g GitRepository) MarshalJSON() ([]byte, error) {
 	return json.Marshal(&struct {
 		BaseEntityJSON
-		ProjectID        string `json:"project_id"`
 		RepoURL          string `json:"repo_url"`
 		RepoName         string `json:"repo_name"`
 		GitLabRepoID     int64  `json:"gitlab_repo_id"`
@@ -34,7 +33,6 @@ func (g GitRepository) MarshalJSON() ([]byte, error) {
 		LastCommitHash   string `json:"last_commit_hash,omitempty"`
 	}{
 		BaseEntityJSON:   g.BaseEntity.ToJSON(),
-		ProjectID:        g.ProjectID,
 		RepoURL:          g.RepoURL,
 		RepoName:         g.RepoName,
 		GitLabRepoID:     g.GitLabRepoID,
@@ -48,7 +46,7 @@ func (g GitRepository) MarshalJSON() ([]byte, error) {
 
 // CreateGitRepositoryRequest for creating Git repo
 type CreateGitRepositoryRequest struct {
-	ProjectID   string `json:"project_id" binding:"required"`
+	ProjectUUID string `json:"project_id" binding:"required"` // Accepts project UUID from frontend
 	RepoName    string `json:"repo_name" binding:"required,min=3,max=100"`
 	Description string `json:"description"`
 }

@@ -38,12 +38,12 @@ func (s *ProjectService) CreateProject(req *models.CreateProjectRequest) (*model
 	return project, nil
 }
 
-func (s *ProjectService) GetProject(id string) (*models.Project, error) {
-	return s.repo.GetByID(id)
+func (s *ProjectService) GetProjectByUUID(uuid string) (*models.Project, error) {
+	return s.repo.GetByUUID(uuid)
 }
 
-func (s *ProjectService) GetProjectWithRelations(id string) (*models.ProjectWithRelations, error) {
-	return s.repo.GetWithGitRepo(id)
+func (s *ProjectService) GetProjectWithRelations(uuid string) (*models.ProjectWithRelations, error) {
+	return s.repo.GetWithGitRepoByUUID(uuid)
 }
 
 func (s *ProjectService) GetAllProjects(page, limit int) ([]models.Project, int64, error) {
@@ -58,8 +58,8 @@ func (s *ProjectService) GetAllProjects(page, limit int) ([]models.Project, int6
 	return s.repo.GetAll(limit, offset)
 }
 
-func (s *ProjectService) UpdateProject(id string, req *models.UpdateProjectRequest) (*models.Project, error) {
-	project, err := s.repo.GetByID(id)
+func (s *ProjectService) UpdateProject(uuid string, req *models.UpdateProjectRequest) (*models.Project, error) {
+	project, err := s.repo.GetByUUID(uuid)
 	if err != nil {
 		return nil, err
 	}
@@ -85,12 +85,12 @@ func (s *ProjectService) UpdateProject(id string, req *models.UpdateProjectReque
 	return project, nil
 }
 
-func (s *ProjectService) DeleteProject(id string) error {
-	_, err := s.repo.GetByID(id)
+func (s *ProjectService) DeleteProject(uuid string) error {
+	_, err := s.repo.GetByUUID(uuid)
 	if err != nil {
 		return err
 	}
 
 	// Soft delete with deleted_by (in future, get from auth context)
-	return s.repo.Delete(id, "system")
+	return s.repo.DeleteByUUID(uuid, "system")
 }
