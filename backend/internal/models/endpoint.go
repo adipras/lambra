@@ -8,8 +8,8 @@ import (
 // Endpoint represents an API endpoint
 type Endpoint struct {
 	BaseEntity
-	EntityID       int64           `db:"entity_id" json:"-"`   // FK to entities.id (internal)
-	ProjectID      int64           `db:"project_id" json:"-"`  // FK to projects.id (internal)
+	EntityID       int64           `db:"entity_id" json:"-"`  // FK to entities.id (internal)
+	ProjectID      int64           `db:"project_id" json:"-"` // FK to projects.id (internal)
 	Name           string          `db:"name" json:"name"`
 	Path           string          `db:"path" json:"path"`
 	Method         string          `db:"method" json:"method"` // GET, POST, PUT, DELETE, PATCH

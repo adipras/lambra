@@ -29,7 +29,7 @@ func (s *EndpointService) CreateEndpoint(req *models.CreateEndpointRequest) (*mo
 	}
 
 	endpoint := &models.Endpoint{
-		EntityID:       entity.ID,      // Use internal entity ID
+		EntityID:       entity.ID,        // Use internal entity ID
 		ProjectID:      entity.ProjectID, // Get project ID from entity
 		Name:           req.Name,
 		Path:           req.Path,

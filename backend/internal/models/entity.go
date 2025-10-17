@@ -35,11 +35,11 @@ func (e Entity) MarshalJSON() ([]byte, error) {
 // EntityField represents a field in an entity
 type EntityField struct {
 	Name         string `json:"name"`
-	Type         string `json:"type"`         // string, int, float, bool, date, datetime, json
+	Type         string `json:"type"` // string, int, float, bool, date, datetime, json
 	Required     bool   `json:"required"`
 	Unique       bool   `json:"unique"`
 	DefaultValue string `json:"default_value,omitempty"`
-	Length       int    `json:"length,omitempty"`       // for string types
+	Length       int    `json:"length,omitempty"` // for string types
 	Description  string `json:"description,omitempty"`
 }
 

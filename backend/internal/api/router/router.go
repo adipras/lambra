@@ -24,10 +24,16 @@ func Setup(db *sqlx.DB) *gin.Engine {
 
 	// Initialize services
 	projectService := service.NewProjectService(projectRepo)
+	entityService := service.NewEntityService(entityRepo, projectRepo)
+	endpointService := service.NewEndpointService(endpointRepo, entityRepo, projectRepo)
+	generatorService := service.NewGeneratorService(projectRepo, entityRepo, endpointRepo)
 
 	// Initialize handlers
 	healthHandler := handlers.NewHealthHandler(db)
 	projectHandler := handlers.NewProjectHandler(projectService)
+	entityHandler := handlers.NewEntityHandler(entityService)
+	endpointHandler := handlers.NewEndpointHandler(endpointService)
+	generatorHandler := handlers.NewGeneratorHandler(generatorService)
 
 	// Health check routes
 	router.GET("/health", healthHandler.HealthCheck)
@@ -42,35 +48,39 @@ func Setup(db *sqlx.DB) *gin.Engine {
 			projects.POST("", projectHandler.CreateProject)
 			projects.GET("", projectHandler.GetAllProjects)
 			projects.GET("/:id", projectHandler.GetProject)
+			projects.GET("/:id/entities", entityHandler.GetEntitiesByProject)
+			projects.GET("/:id/endpoints", endpointHandler.GetEndpointsByProject)
 			projects.PUT("/:id", projectHandler.UpdateProject)
 			projects.DELETE("/:id", projectHandler.DeleteProject)
-
-			// Entities (will be implemented in Phase 2)
-			// projects.POST("/:id/entities", entityHandler.CreateEntity)
-			// projects.GET("/:id/entities", entityHandler.GetEntitiesByProject)
-
-			// Generation (will be implemented in Phase 2)
-			// projects.POST("/:id/generate", generatorHandler.Generate)
-			// projects.POST("/:id/regenerate", generatorHandler.Regenerate)
 		}
 
-		// Entities (will be implemented later)
-		// entities := v1.Group("/entities")
-		// {
-		// 	entities.GET("/:id", entityHandler.GetEntity)
-		// 	entities.PUT("/:id", entityHandler.UpdateEntity)
-		// 	entities.DELETE("/:id", entityHandler.DeleteEntity)
-		// }
+		// Entities
+		entities := v1.Group("/entities")
+		{
+			entities.POST("", entityHandler.CreateEntity)
+			entities.GET("/:id", entityHandler.GetEntity)
+			entities.GET("/:id/endpoints", endpointHandler.GetEndpointsByEntity)
+			entities.PUT("/:id", entityHandler.UpdateEntity)
+			entities.DELETE("/:id", entityHandler.DeleteEntity)
+		}
 
-		// Endpoints (will be implemented later)
-		// endpoints := v1.Group("/endpoints")
-		// {
-		// 	endpoints.POST("", endpointHandler.CreateEndpoint)
-		// 	endpoints.GET("/:id", endpointHandler.GetEndpoint)
-		// 	endpoints.PUT("/:id", endpointHandler.UpdateEndpoint)
-		// 	endpoints.DELETE("/:id", endpointHandler.DeleteEndpoint)
-		// 	endpoints.POST("/:id/test", endpointHandler.TestEndpoint)
-		// }
+		// Endpoints
+		endpoints := v1.Group("/endpoints")
+		{
+			endpoints.POST("", endpointHandler.CreateEndpoint)
+			endpoints.GET("/:id", endpointHandler.GetEndpoint)
+			endpoints.PUT("/:id", endpointHandler.UpdateEndpoint)
+			endpoints.DELETE("/:id", endpointHandler.DeleteEndpoint)
+		}
+
+		// Code Generation
+		generate := v1.Group("/generate")
+		{
+			generate.POST("/entity", generatorHandler.GenerateEntity)
+			generate.POST("/project", generatorHandler.GenerateProject)
+			generate.GET("/preview/:id", generatorHandler.PreviewEntity)
+			generate.GET("/files/:id", generatorHandler.GetGeneratedFilesList)
+		}
 
 		// Deployments (will be implemented in Phase 4)
 		// deployments := v1.Group("/deployments")
@@ -87,10 +97,6 @@ func Setup(db *sqlx.DB) *gin.Engine {
 		// 	snapshots.POST("/:id/rollback", snapshotHandler.Rollback)
 		// }
 	}
-
-	// Prevent unused variable warnings (remove these when implementing)
-	_ = entityRepo
-	_ = endpointRepo
 
 	return router
 }

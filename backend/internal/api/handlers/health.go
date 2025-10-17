@@ -22,7 +22,7 @@ func (h *HealthHandler) HealthCheck(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{
-		"status": "healthy",
+		"status":   "healthy",
 		"database": "connected",
 	}, "Service is healthy")
 }

@@ -10,8 +10,8 @@ type Project struct {
 	BaseEntity
 	Name        string         `db:"name" json:"name"`
 	Description sql.NullString `db:"description" json:"-"`
-	Status      string         `db:"status" json:"status"` // active, generating, failed, archived
-	GitRepoID   sql.NullInt64  `db:"git_repo_id" json:"-"` // Foreign key to git_repositories.id
+	Status      string         `db:"status" json:"status"`       // active, generating, failed, archived
+	GitRepoID   sql.NullInt64  `db:"git_repo_id" json:"-"`       // Foreign key to git_repositories.id
 	Namespace   string         `db:"namespace" json:"namespace"` // k8s namespace
 }
 
@@ -35,9 +35,9 @@ func (p Project) MarshalJSON() ([]byte, error) {
 // ProjectWithRelations includes related data
 type ProjectWithRelations struct {
 	Project
-	GitRepo     *GitRepository   `json:"git_repo,omitempty"`
-	Entities    []Entity         `json:"entities,omitempty"`
-	Deployments []Deployment     `json:"deployments,omitempty"`
+	GitRepo     *GitRepository `json:"git_repo,omitempty"`
+	Entities    []Entity       `json:"entities,omitempty"`
+	Deployments []Deployment   `json:"deployments,omitempty"`
 }
 
 // CreateProjectRequest for creating a new project

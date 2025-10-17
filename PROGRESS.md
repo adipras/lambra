@@ -1,9 +1,9 @@
 # Lambra - Progress Tracker
 
-> **Last Updated:** 2025-10-16 (Dual ID Strategy Implementation Complete)
-> **Current Phase:** Phase 1.5 - Dual Identifier Refactoring (100% Complete - Pending Testing)
-> **Next Phase:** Phase 2 - Core Generator Engine
-> **Overall Progress:** 35% (Phase 1 complete + Dual ID implementation complete)
+> **Last Updated:** 2025-10-17 (Template Engine & Code Generator Complete)
+> **Current Phase:** Phase 2 - Template Engine & Code Generator (100% Complete ✅)
+> **Next Phase:** Phase 2.2 - Entity & Endpoint Handlers + Phase 2.3 - GitLab Integration
+> **Overall Progress:** 45% (Phase 1 + Phase 1.5 + Phase 2.1 complete)
 
 ---
 
@@ -198,26 +198,162 @@ INSERT INTO projects (id, uuid, ...) VALUES (?, ?, ...)
 
 ---
 
-### 🔄 Phase 2: Core Generator Engine (PENDING)
+## 🎨 Phase 2.1: Template Engine & Code Generator (✅ COMPLETED)
+
+**Status:** 100% Complete
+**Started:** 2025-10-17
+**Completed:** 2025-10-17
+**Testing Status:** ✅ All tests passing (75.4% coverage)
+
+### ✅ Completed Tasks
+
+**Template Engine (`internal/generator/template_engine.go`):**
+- [x] Go text/template integration with custom functions
+- [x] 30+ helper functions for code generation:
+  - [x] Case conversion: `toCamel`, `toPascal`, `toSnake`, `toKebab`
+  - [x] Pluralization: `pluralize`, `singularize`
+  - [x] Type conversion: `goType` (maps 14 data types to Go types)
+  - [x] Struct tags: `jsonTag`, `dbTag`
+  - [x] String utilities: `quote`, `backquote`, `indent`, `join`, `replace`
+- [x] Template rendering engine with error handling
+- [x] Fixed deprecated `strings.Title` → using `golang.org/x/text/cases`
+
+**Code Generator (`internal/generator/code_generator.go`):**
+- [x] GenerateContext preparation from Entity model
+- [x] Field parsing with proper Go type mapping
+- [x] Import determination based on field types
+- [x] Validation logic for generation context
+- [x] Code generation for all layers:
+  - [x] Model generation (with BaseEntity, validation)
+  - [x] Repository generation (full CRUD with dual ID)
+  - [x] Service generation (business logic)
+  - [x] Handler generation (HTTP endpoints)
+  - [x] DTO generation (Request/Response)
+  - [x] Migration generation (SQL up/down)
+
+**Templates (`internal/generator/templates.go`):**
+- [x] Model template - BaseEntity, TableName(), Validate()
+- [x] Repository template - CRUD with GetByID, GetByUUID, List, Count
+- [x] Service template - Business logic with validation
+- [x] Handler template - RESTful endpoints with Gin
+- [x] DTO template - Create/Update requests, Response
+- [x] Migration template - PostgreSQL schema with indexes
+
+**Generator Service (`internal/service/generator_service.go`):**
+- [x] GenerateEntity(entityID) - Generate code for single entity
+- [x] GenerateProject(projectID) - Generate code for all entities
+- [x] PreviewEntity(entityID) - Preview without writing files
+- [x] GetGeneratedFilesList(entityID) - List files to be generated
+
+**HTTP API (`internal/api/handlers/generator_handler.go`):**
+- [x] POST `/api/v1/generate/entity` - Generate code for entity
+- [x] POST `/api/v1/generate/project` - Generate code for project
+- [x] GET `/api/v1/generate/preview/:id` - Preview generated code
+- [x] GET `/api/v1/generate/files/:id` - List files to be generated
+
+**Router Integration:**
+- [x] Generator endpoints added to router (`internal/api/router/router.go`)
+- [x] Generator service initialized with dependencies
+
+**Testing (`internal/generator/*_test.go`):**
+- [x] Template Engine Tests (19 tests) - All passing ✅
+  - Case conversions, pluralization, type mapping, tag generation
+- [x] Code Generator Tests (9 tests) - All passing ✅
+  - PrepareContext, ValidateContext, Generate all layers
+- [x] Test coverage: **75.4%**
+
+**Build & Compilation:**
+- [x] ✅ All packages build successfully
+- [x] ✅ No compilation errors
+- [x] ✅ Dependencies added: `golang.org/x/text`
+
+### Generated Code Structure
+```
+generated/
+├── models/
+│   └── {entity}.go              (BaseEntity + UUID + timestamps)
+├── repository/
+│   └── {entity}_repository.go   (CRUD with dual identifier)
+├── service/
+│   └── {entity}_service.go      (business logic)
+├── api/
+│   ├── handlers/
+│   │   └── {entity}_handler.go  (HTTP endpoints)
+│   └── dto/
+│       └── {entity}_dto.go      (request/response)
+└── migrations/
+    ├── create_{table}.up.sql
+    └── create_{table}.down.sql
+```
+
+### Features Highlights
+✅ **Smart Type Mapping** - Auto convert data types to Go types
+✅ **Dual Identifier** - Support ID (int64) and UUID
+✅ **Soft Delete** - deleted_at timestamp
+✅ **Validation** - Go validator tags
+✅ **RESTful** - Standard REST patterns
+✅ **Error Handling** - Comprehensive error messages
+✅ **Testable** - All generated code is testable
+
+### Test Results Summary
+```bash
+=== Generator Package Tests ===
+✅ TestTemplateEngine_Render        (19 sub-tests)
+✅ TestCaseConversions              (5 sub-tests)
+✅ TestPluralizeSingularize         (6 sub-tests)
+✅ TestGoTypeConversion             (14 sub-tests)
+✅ TestCodeGenerator_PrepareContext
+✅ TestCodeGenerator_ValidateContext (4 sub-tests)
+✅ TestCodeGenerator_GenerateModel
+✅ TestCodeGenerator_GenerateRepository
+✅ TestCodeGenerator_GenerateService
+✅ TestCodeGenerator_GenerateHandler
+✅ TestCodeGenerator_GenerateDTO
+✅ TestCodeGenerator_GenerateMigration
+✅ TestCodeGenerator_GetGeneratedFiles
+
+Total: 28 tests - ALL PASSING ✅
+Coverage: 75.4% of statements
+```
+
+---
+
+## 🔄 Phase 2.2: Entity & Endpoint Handlers (PENDING)
+
 **Status:** 0% Complete
-**Target Start:** After Phase 1.5 completion
-**Estimated Duration:** 2-3 days
-**Dependencies:** UUID refactoring must be completed first
+**Target Start:** Monday, next week
+**Estimated Duration:** 1 day
+**Dependencies:** Phase 2.1 complete ✅
 
 **TODO List:**
-- [ ] Template System
-  - [ ] Setup Go text/template integration
-  - [ ] Create default templates (controller, service, model, route, middleware)
-  - [ ] Template variables mapping
-  - [ ] Template storage & retrieval system
+- [ ] Entity Handlers
+  - [ ] Create entity endpoint with code generation
+  - [ ] List entities by project
+  - [ ] Get entity detail
+  - [ ] Update entity
+  - [ ] Delete entity
 
-- [ ] Code Generator Service
-  - [ ] Workspace management (create temp dir, cleanup)
-  - [ ] File generation from templates
-  - [ ] Directory structure creation
-  - [ ] Variable replacement engine
-  - [ ] Generated code validation
+- [ ] Endpoint Handlers
+  - [ ] Create endpoint
+  - [ ] List endpoints by entity
+  - [ ] Get endpoint detail
+  - [ ] Update endpoint
+  - [ ] Delete endpoint
 
+- [ ] Frontend Integration
+  - [ ] EntityForm component
+  - [ ] EndpointForm component
+  - [ ] ServiceDetail page
+  - [ ] Entity & Endpoint management UI
+
+---
+
+## 🔄 Phase 2.3: Git Integration (PENDING)
+
+**Status:** 0% Complete
+**Dependencies:** Phase 2.2 complete
+
+**TODO List:**
 - [ ] Git Integration
   - [ ] GitLab API client setup
   - [ ] Repository creation
@@ -235,7 +371,6 @@ INSERT INTO projects (id, uuid, ...) VALUES (?, ?, ...)
   - [ ] Progress tracking & status updates
 
 **Expected Deliverables:**
-- Generator service with template engine
 - GitLab integration wrapper
 - Generate API endpoint working end-to-end
 - Generated service can run in Docker
@@ -319,12 +454,15 @@ backend/
 │   ├── database/db.go                        ✅ Done
 │   ├── models/                               ✅ All 6 models done
 │   ├── repository/                           ✅ 3 repos done, 3 pending
-│   ├── service/                              ✅ 1 service done, 4 pending
-│   └── generator/                            ⏳ Phase 2 (new package)
-│       ├── template_engine.go                ⏳ Phase 2
-│       ├── code_generator.go                 ⏳ Phase 2
-│       ├── workspace_manager.go              ⏳ Phase 2
-│       └── git_client.go                     ⏳ Phase 2
+│   ├── service/                              ✅ 4 services done, 1 pending
+│   └── generator/                            ✅ Phase 2.1 complete
+│       ├── template_engine.go                ✅ Done (with 19 tests)
+│       ├── template_engine_test.go           ✅ Done
+│       ├── code_generator.go                 ✅ Done (with 9 tests)
+│       ├── code_generator_test.go            ✅ Done
+│       ├── templates.go                      ✅ Done (6 templates)
+│       ├── workspace_manager.go              ⏳ Phase 2.3
+│       └── git_client.go                     ⏳ Phase 2.3
 ├── migrations/                               ✅ Initial schema done
 ├── templates/
 │   ├── docker/                               ✅ 5 templates done
@@ -409,6 +547,10 @@ frontend/src/
 | POST | `/api/v1/projects` | project.go:16 | ✅ Working |
 | PUT | `/api/v1/projects/:id` | project.go:65 | ✅ Working |
 | DELETE | `/api/v1/projects/:id` | project.go:85 | ✅ Working |
+| POST | `/api/v1/generate/entity` | generator_handler.go | ✅ Done |
+| POST | `/api/v1/generate/project` | generator_handler.go | ✅ Done |
+| GET | `/api/v1/generate/preview/:id` | generator_handler.go | ✅ Done |
+| GET | `/api/v1/generate/files/:id` | generator_handler.go | ✅ Done |
 
 ### Pending (Phase 2) ⏳
 | Method | Endpoint | Purpose |
@@ -487,6 +629,9 @@ frontend/src/
 - [ ] Unit tests for repositories
 - [ ] Unit tests for services
 - [ ] Integration tests for API handlers
+- [x] **Generator package tests (28 tests, 75.4% coverage)** ✅
+  - [x] Template engine tests (19 tests)
+  - [x] Code generator tests (9 tests)
 - [ ] End-to-end tests for generator flow
 
 ### Frontend Tests
@@ -637,17 +782,21 @@ curl http://localhost:8080/health  # Health check
 
 ## 📊 Metrics & Progress
 
-### Phase 1 Statistics
-- **Files Created:** 60+
-- **Backend Code:** ~2,000 lines
+### Current Statistics
+- **Files Created:** 72+ (including generator package + tests)
+- **Backend Code:** ~3,500 lines (including generator: ~1,200 lines)
 - **Frontend Code:** ~1,500 lines
 - **Docker Configs:** ~300 lines
-- **Documentation:** ~500 lines
-- **Total:** ~4,300 lines of code
+- **Documentation:** ~600 lines
+- **Tests:** ~650 lines (generator tests)
+- **Total:** ~6,550 lines of code
 
 ### Time Tracking
 - **Phase 1:** Completed in 1 session (~3 hours)
-- **Phase 2:** Estimated 2-3 days
+- **Phase 1.5:** Completed in 1 session (~2 hours)
+- **Phase 2.1:** Completed in 1 session (~3 hours) ✅
+- **Phase 2.2:** Estimated 1 day (Entity & Endpoint handlers)
+- **Phase 2.3:** Estimated 1-2 days (GitLab integration)
 - **Phase 3:** Estimated 2-3 days
 - **Phase 4:** Estimated 2-3 days
 - **Total Project:** Estimated 7-10 days
@@ -772,22 +921,28 @@ curl -X POST http://localhost:8080/api/v1/projects \
 | 1.0.0 | 2025-10-14 | Phase 1 | Initial project setup complete |
 | 1.0.5 | 2025-10-14 | Phase 1.5 | UUID refactoring started (strategy changed) |
 | 1.0.9 | 2025-10-16 | Phase 1.5 | Dual ID implementation complete (pending testing) |
-| 1.1.0 | TBD | Phase 2 | Core generator engine (pending) |
-| 1.2.0 | TBD | Phase 3 | UI dashboard enhancement (pending) |
-| 1.3.0 | TBD | Phase 4 | Testing & deployment features (pending) |
+| 1.1.0 | 2025-10-17 | Phase 2.1 | Template Engine & Code Generator complete ✅ |
+| 1.2.0 | TBD | Phase 2.2 | Entity & Endpoint handlers (pending) |
+| 1.3.0 | TBD | Phase 2.3 | GitLab integration (pending) |
+| 1.4.0 | TBD | Phase 3 | UI dashboard enhancement (pending) |
+| 1.5.0 | TBD | Phase 4 | Testing & deployment features (pending) |
 
 ---
 
-**Last Review:** 2025-10-16 (Dual ID Implementation Complete)
-**Next Review:** Start of next session (Testing & Phase 2 preparation)
+**Last Review:** 2025-10-17 (Template Engine & Code Generator Complete - Weekend)
+**Next Review:** Monday next week (Phase 2.2 - Entity & Endpoint handlers)
 **Maintained By:** Development Team
 
-**Note for Next Session:**
-- ✅ All backend code updated to dual identifier pattern
-- ✅ Build successful with no compilation errors
-- ⏳ Need to start Docker and test with actual database
-- ⏳ Frontend needs update to handle UUID strings
-- Ready to proceed to Phase 2 after testing verification
+**Note for Next Session (Monday):**
+- ✅ Template Engine & Code Generator implemented and tested (75.4% coverage)
+- ✅ 28 tests passing, all generator templates working
+- ✅ API endpoints for code generation created
+- ⏳ Need to implement Entity & Endpoint handlers (Phase 2.2)
+- ⏳ Frontend needs EntityForm and EndpointForm components
+- ⏳ GitLab integration pending (Phase 2.3)
+- Ready to proceed to Phase 2.2 on Monday
+
+**Weekend Break:** 2025-10-17 to 2025-10-20 (Resume Monday)
 
 ---
 

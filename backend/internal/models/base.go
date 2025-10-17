@@ -8,8 +8,8 @@ import (
 // BaseEntity contains common fields for all entities
 // Uses dual identifier strategy: ID (BIGINT) for internal, UUID (CHAR36) for external
 type BaseEntity struct {
-	ID        int64          `db:"id" json:"-"`                 // Internal ID (not exposed in API)
-	UUID      string         `db:"uuid" json:"id"`              // External UUID (exposed as "id" in API)
+	ID        int64          `db:"id" json:"-"`    // Internal ID (not exposed in API)
+	UUID      string         `db:"uuid" json:"id"` // External UUID (exposed as "id" in API)
 	CreatedBy sql.NullString `db:"created_by" json:"-"`
 	UpdatedBy sql.NullString `db:"updated_by" json:"-"`
 	DeletedBy sql.NullString `db:"deleted_by" json:"-"`
@@ -20,7 +20,7 @@ type BaseEntity struct {
 
 // BaseEntityJSON for JSON marshaling with proper handling of null values
 type BaseEntityJSON struct {
-	UUID      string     `json:"id"`                   // UUID exposed as "id"
+	UUID      string     `json:"id"` // UUID exposed as "id"
 	CreatedBy string     `json:"created_by,omitempty"`
 	UpdatedBy string     `json:"updated_by,omitempty"`
 	DeletedBy string     `json:"deleted_by,omitempty"`

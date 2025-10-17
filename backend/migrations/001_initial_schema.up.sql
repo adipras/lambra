@@ -1,21 +1,34 @@
+-- Initial schema with dual identifier strategy
+-- ID (BIGINT) for internal use + UUID (CHAR36) for external API
+
+SET FOREIGN_KEY_CHECKS = 0;
+
 -- Projects table
 CREATE TABLE IF NOT EXISTS projects (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id BIGINT NOT NULL PRIMARY KEY,
+    uuid CHAR(36) NOT NULL UNIQUE,
     name VARCHAR(100) NOT NULL,
     description TEXT,
     status VARCHAR(20) NOT NULL DEFAULT 'active',
     namespace VARCHAR(50) NOT NULL,
     git_repo_id BIGINT,
+    created_by VARCHAR(100),
+    updated_by VARCHAR(100),
+    deleted_by VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP NULL,
+    INDEX idx_uuid (uuid),
     INDEX idx_status (status),
     INDEX idx_namespace (namespace),
-    INDEX idx_created_at (created_at)
+    INDEX idx_created_at (created_at),
+    INDEX idx_deleted_at (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Git Repositories table
 CREATE TABLE IF NOT EXISTS git_repositories (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id BIGINT NOT NULL PRIMARY KEY,
+    uuid CHAR(36) NOT NULL UNIQUE,
     project_id BIGINT NOT NULL,
     repo_url VARCHAR(500) NOT NULL,
     repo_name VARCHAR(100) NOT NULL,
@@ -25,11 +38,17 @@ CREATE TABLE IF NOT EXISTS git_repositories (
     staging_branch VARCHAR(50) NOT NULL DEFAULT 'staging',
     production_branch VARCHAR(50) NOT NULL DEFAULT 'production',
     last_commit_hash VARCHAR(255),
+    created_by VARCHAR(100),
+    updated_by VARCHAR(100),
+    deleted_by VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP NULL,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    INDEX idx_uuid (uuid),
     INDEX idx_project_id (project_id),
-    INDEX idx_gitlab_repo_id (gitlab_repo_id)
+    INDEX idx_gitlab_repo_id (gitlab_repo_id),
+    INDEX idx_deleted_at (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Add foreign key to projects table
@@ -39,22 +58,30 @@ FOREIGN KEY (git_repo_id) REFERENCES git_repositories(id) ON DELETE SET NULL;
 
 -- Entities table
 CREATE TABLE IF NOT EXISTS entities (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id BIGINT NOT NULL PRIMARY KEY,
+    uuid CHAR(36) NOT NULL UNIQUE,
     project_id BIGINT NOT NULL,
     name VARCHAR(100) NOT NULL,
     table_name VARCHAR(100) NOT NULL,
     description TEXT,
     fields JSON NOT NULL,
+    created_by VARCHAR(100),
+    updated_by VARCHAR(100),
+    deleted_by VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP NULL,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    INDEX idx_uuid (uuid),
     INDEX idx_project_id (project_id),
-    INDEX idx_table_name (table_name)
+    INDEX idx_table_name (table_name),
+    INDEX idx_deleted_at (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Endpoints table
 CREATE TABLE IF NOT EXISTS endpoints (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id BIGINT NOT NULL PRIMARY KEY,
+    uuid CHAR(36) NOT NULL UNIQUE,
     entity_id BIGINT NOT NULL,
     project_id BIGINT NOT NULL,
     name VARCHAR(100) NOT NULL,
@@ -64,18 +91,25 @@ CREATE TABLE IF NOT EXISTS endpoints (
     request_schema JSON,
     response_schema JSON,
     require_auth BOOLEAN DEFAULT TRUE,
+    created_by VARCHAR(100),
+    updated_by VARCHAR(100),
+    deleted_by VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP NULL,
     FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    INDEX idx_uuid (uuid),
     INDEX idx_entity_id (entity_id),
     INDEX idx_project_id (project_id),
-    INDEX idx_method (method)
+    INDEX idx_method (method),
+    INDEX idx_deleted_at (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Generation Snapshots table
 CREATE TABLE IF NOT EXISTS generation_snapshots (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id BIGINT NOT NULL PRIMARY KEY,
+    uuid CHAR(36) NOT NULL UNIQUE,
     project_id BIGINT NOT NULL,
     version VARCHAR(50) NOT NULL,
     git_commit_hash VARCHAR(255) NOT NULL,
@@ -84,17 +118,24 @@ CREATE TABLE IF NOT EXISTS generation_snapshots (
     database_snapshot JSON NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'created',
     created_by VARCHAR(100),
+    updated_by VARCHAR(100),
+    deleted_by VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP NULL,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    INDEX idx_uuid (uuid),
     INDEX idx_project_id (project_id),
     INDEX idx_version (version),
     INDEX idx_status (status),
-    INDEX idx_created_at (created_at)
+    INDEX idx_created_at (created_at),
+    INDEX idx_deleted_at (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Deployments table
 CREATE TABLE IF NOT EXISTS deployments (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id BIGINT NOT NULL PRIMARY KEY,
+    uuid CHAR(36) NOT NULL UNIQUE,
     project_id BIGINT NOT NULL,
     snapshot_id BIGINT,
     environment VARCHAR(20) NOT NULL,
@@ -103,20 +144,27 @@ CREATE TABLE IF NOT EXISTS deployments (
     deployed_by VARCHAR(100),
     deployment_url VARCHAR(500),
     error_message TEXT,
+    created_by VARCHAR(100),
+    updated_by VARCHAR(100),
+    deleted_by VARCHAR(100),
     started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP NULL,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
     FOREIGN KEY (snapshot_id) REFERENCES generation_snapshots(id) ON DELETE SET NULL,
+    INDEX idx_uuid (uuid),
     INDEX idx_project_id (project_id),
     INDEX idx_environment (environment),
     INDEX idx_status (status),
-    INDEX idx_started_at (started_at)
+    INDEX idx_started_at (started_at),
+    INDEX idx_deleted_at (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Deployment Logs table
+-- Deployment Logs table (no UUID needed for logs)
 CREATE TABLE IF NOT EXISTS deployment_logs (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id BIGINT NOT NULL PRIMARY KEY,
     deployment_id BIGINT NOT NULL,
     level VARCHAR(20) NOT NULL,
     message TEXT NOT NULL,
@@ -127,16 +175,25 @@ CREATE TABLE IF NOT EXISTS deployment_logs (
     INDEX idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Templates table (for Phase 2)
+-- Templates table
 CREATE TABLE IF NOT EXISTS templates (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id BIGINT NOT NULL PRIMARY KEY,
+    uuid CHAR(36) NOT NULL UNIQUE,
     name VARCHAR(100) NOT NULL,
     type VARCHAR(50) NOT NULL,
     content TEXT NOT NULL,
     description TEXT,
     is_default BOOLEAN DEFAULT FALSE,
+    created_by VARCHAR(100),
+    updated_by VARCHAR(100),
+    deleted_by VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP NULL,
+    INDEX idx_uuid (uuid),
     INDEX idx_type (type),
-    INDEX idx_is_default (is_default)
+    INDEX idx_is_default (is_default),
+    INDEX idx_deleted_at (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+SET FOREIGN_KEY_CHECKS = 1;
