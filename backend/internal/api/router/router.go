@@ -48,20 +48,22 @@ func Setup(db *sqlx.DB) *gin.Engine {
 			projects.POST("", projectHandler.CreateProject)
 			projects.GET("", projectHandler.GetAllProjects)
 			projects.GET("/:id", projectHandler.GetProject)
-			projects.GET("/:id/entities", entityHandler.GetEntitiesByProject)
-			projects.GET("/:id/endpoints", endpointHandler.GetEndpointsByProject)
 			projects.PUT("/:id", projectHandler.UpdateProject)
 			projects.DELETE("/:id", projectHandler.DeleteProject)
+
+			// Nested routes for project entities and endpoints
+			projects.POST("/:id/entities", entityHandler.CreateEntity)
+			projects.GET("/:id/entities", entityHandler.GetEntitiesByProject)
+			projects.GET("/:id/endpoints", endpointHandler.GetEndpointsByProject)
 		}
 
 		// Entities
 		entities := v1.Group("/entities")
 		{
-			entities.POST("", entityHandler.CreateEntity)
 			entities.GET("/:id", entityHandler.GetEntity)
-			entities.GET("/:id/endpoints", endpointHandler.GetEndpointsByEntity)
 			entities.PUT("/:id", entityHandler.UpdateEntity)
 			entities.DELETE("/:id", entityHandler.DeleteEntity)
+			entities.GET("/:id/endpoints", endpointHandler.GetEndpointsByEntity)
 		}
 
 		// Endpoints

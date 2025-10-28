@@ -51,7 +51,7 @@ type EntityWithEndpoints struct {
 
 // CreateEntityRequest for creating a new entity
 type CreateEntityRequest struct {
-	ProjectUUID string        `json:"project_id" binding:"required"` // Accepts project UUID from frontend
+	ProjectUUID string        `json:"project_id"` // Will be set from URL param, not from request body
 	Name        string        `json:"name" binding:"required,min=2,max=100"`
 	TableName   string        `json:"table_name" binding:"required,min=2,max=100"`
 	Description string        `json:"description" binding:"max=500"`

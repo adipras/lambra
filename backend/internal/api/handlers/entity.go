@@ -16,12 +16,21 @@ func NewEntityHandler(service *service.EntityService) *EntityHandler {
 }
 
 // CreateEntity creates a new entity for a project
+// POST /api/v1/projects/:id/entities
 func (h *EntityHandler) CreateEntity(c *gin.Context) {
 	var req models.CreateEntityRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request body", err)
 		return
 	}
+
+	// Get project id from URL param and set it in request
+	projectID := c.Param("id")
+	if projectID == "" {
+		response.BadRequest(c, "Invalid project ID", nil)
+		return
+	}
+	req.ProjectUUID = projectID
 
 	entity, err := h.service.CreateEntity(&req)
 	if err != nil {
@@ -50,6 +59,7 @@ func (h *EntityHandler) GetEntity(c *gin.Context) {
 }
 
 // GetEntitiesByProject retrieves all entities for a project
+// GET /api/v1/projects/:id/entities
 func (h *EntityHandler) GetEntitiesByProject(c *gin.Context) {
 	projectID := c.Param("id")
 	if projectID == "" {

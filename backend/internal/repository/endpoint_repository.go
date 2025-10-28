@@ -2,6 +2,7 @@ package repository
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"math/big"
 
@@ -31,6 +32,14 @@ func (r *EndpointRepository) Create(endpoint *models.Endpoint) error {
 	uuidV7 := uuid.Must(uuid.NewV7())
 	id := uuidToInt64Endpoint(uuidV7)
 	uuidStr := uuidV7.String()
+
+	// Initialize empty JSON if nil
+	if endpoint.RequestSchema == nil {
+		endpoint.RequestSchema = json.RawMessage("{}")
+	}
+	if endpoint.ResponseSchema == nil {
+		endpoint.ResponseSchema = json.RawMessage("{}")
+	}
 
 	query := `
 		INSERT INTO endpoints (id, uuid, entity_id, project_id, name, path, method, description,

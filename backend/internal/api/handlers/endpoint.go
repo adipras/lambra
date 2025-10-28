@@ -50,6 +50,7 @@ func (h *EndpointHandler) GetEndpoint(c *gin.Context) {
 }
 
 // GetEndpointsByProject retrieves all endpoints for a project
+// GET /api/v1/projects/:id/endpoints
 func (h *EndpointHandler) GetEndpointsByProject(c *gin.Context) {
 	projectID := c.Param("id")
 	if projectID == "" {
@@ -67,6 +68,7 @@ func (h *EndpointHandler) GetEndpointsByProject(c *gin.Context) {
 }
 
 // GetEndpointsByEntity retrieves all endpoints for an entity
+// GET /api/v1/entities/:id/endpoints
 func (h *EndpointHandler) GetEndpointsByEntity(c *gin.Context) {
 	entityID := c.Param("id")
 	if entityID == "" {
