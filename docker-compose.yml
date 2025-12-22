@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # MySQL Database
   mysql:
@@ -11,7 +9,7 @@ services:
       MYSQL_USER: lambra
       MYSQL_PASSWORD: lambra_secret
     ports:
-      - "3306:3306"
+      - "3307:3306"  # Use 3307 to avoid conflict with local MySQL
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:

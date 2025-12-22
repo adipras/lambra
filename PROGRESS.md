@@ -1,9 +1,9 @@
 # Lambra - Progress Tracker
 
-> **Last Updated:** 2025-10-28 (Entity & Endpoint Management Complete)
-> **Current Phase:** Phase 2.2 - Entity & Endpoint Handlers (100% Complete ✅)
-> **Next Phase:** Phase 2.3 - GitLab Integration
-> **Overall Progress:** 60% (Phase 1 + Phase 1.5 + Phase 2.1 + Phase 2.2 complete)
+> **Last Updated:** 2025-12-22 (UI Enhancement & Local Deployment Complete)
+> **Current Phase:** Phase 2.4 - UI Enhancement & Local Deployment (100% Complete ✅)
+> **Next Phase:** Phase 2.3 - GitLab Integration (Optional)
+> **Overall Progress:** 70% (Phase 1 + Phase 1.5 + Phase 2.1 + Phase 2.2 + Phase 2.4 complete)
 
 ---
 
@@ -457,7 +457,109 @@ Coverage: 75.4% of statements
 
 ---
 
-## 🔄 Phase 2.3: Git Integration (PENDING)
+## 🔄 Phase 2.4: UI Enhancement & Local Deployment (✅ COMPLETED)
+
+**Status:** 100% Complete
+**Started:** 2025-12-22
+**Completed:** 2025-12-22
+**Testing Status:** ✅ All features tested and working
+
+### ✅ Completed Tasks
+
+**Bug Fixes:**
+- [x] Fixed Generator API to use UUID instead of int64 ID
+  - Updated `generator_handler.go` - accept UUID string in URL params
+  - Updated `generator_service.go` - added `*ByUUID` methods
+- [x] Fixed docker-compose.yml MySQL port conflict (3306 → 3307)
+- [x] Removed deprecated `version` attribute from docker-compose.yml
+
+**Generator API Enhancement:**
+- [x] `POST /api/v1/generate/entity` - Now accepts `entity_id` as UUID
+- [x] `POST /api/v1/generate/project` - Now accepts `project_id` as UUID
+- [x] `GET /api/v1/generate/preview/:id` - Now accepts UUID
+- [x] `GET /api/v1/generate/files/:id` - Now accepts UUID
+
+**UI Enhancement - Code Preview:**
+- [x] Created `frontend/src/api/generator.js` - Generator API client
+- [x] Added Code Preview Modal to ServiceDetail page
+  - File list sidebar with layer badges (model, repository, service, handler, dto, migration)
+  - Syntax-highlighted code viewer
+  - Generate button from preview modal
+- [x] Added Preview button (eye icon) on each entity card
+- [x] Added toast notifications for success/error feedback
+
+**Local Deployment Feature:**
+- [x] Created `backend/internal/service/deployment_service.go`
+  - `DeployProject()` - Generate code → Create Docker files → Build & start container
+  - `StartService()` - Start a stopped service
+  - `StopService()` - Stop a running service
+  - `GetServiceStatus()` - Get deployment status (running/stopped/not_deployed)
+- [x] Created `backend/internal/api/handlers/deployment.go`
+- [x] Added deployment routes to router:
+  - `POST /api/v1/projects/:id/deploy` - Deploy project to Docker
+  - `POST /api/v1/projects/:id/start` - Start service
+  - `POST /api/v1/projects/:id/stop` - Stop service
+  - `GET /api/v1/projects/:id/status` - Get deployment status
+
+**Frontend Deployment Controls:**
+- [x] Created `frontend/src/api/deployment.js` - Deployment API client
+- [x] Updated ServiceDetail page with:
+  - Status indicator (green=running, yellow=stopped, gray=not deployed)
+  - Deploy button - Deploy service to local Docker
+  - Start/Stop buttons - Control running services
+  - Service URL link - Direct link when service is running
+  - Auto-refresh status (polls every 5 seconds when running)
+  - Project info card with service URL
+
+### 📦 Files Created/Modified
+
+**Backend (6 files):**
+- `internal/api/handlers/generator_handler.go` - UUID support
+- `internal/api/handlers/deployment.go` ✨ NEW - Deployment handler
+- `internal/api/router/router.go` - Added deployment routes
+- `internal/service/generator_service.go` - Added *ByUUID methods
+- `internal/service/deployment_service.go` ✨ NEW - Deployment service
+- `docker-compose.yml` - Fixed port conflict
+
+**Frontend (3 files):**
+- `src/api/generator.js` ✨ NEW - Generator API client
+- `src/api/deployment.js` ✨ NEW - Deployment API client
+- `src/pages/ServiceDetail.jsx` - Major update with deployment controls
+
+**Documentation (1 file):**
+- `CLAUDE.md` ✨ NEW - Claude Code guidance file
+
+### 🧪 Testing Results
+
+**API Tests:**
+```bash
+✅ GET /health - Service healthy
+✅ GET /ready - Service ready
+✅ GET /api/v1/generate/files/{uuid} - Returns file list
+✅ GET /api/v1/generate/preview/{uuid} - Returns generated code
+✅ POST /api/v1/generate/project - Generates 7 files
+✅ GET /api/v1/projects/{uuid}/status - Returns deployment status
+```
+
+**Unit Tests:**
+```bash
+✅ Generator package: 28 tests - ALL PASSING
+   - Template Engine: 19 tests
+   - Code Generator: 9 tests
+   - Coverage: 75.4%
+```
+
+### 🎯 Phase 2.4 Success Criteria (All Met ✅)
+- [x] Generator API works with UUID identifiers
+- [x] Can preview generated code from UI
+- [x] Can deploy service to local Docker
+- [x] Can start/stop deployed services
+- [x] Service status displayed in UI with indicators
+- [x] Service URL accessible when running
+
+---
+
+## 🔄 Phase 2.3: Git Integration (PENDING - OPTIONAL)
 
 **Status:** 0% Complete
 **Dependencies:** Phase 2.2 complete
@@ -1043,14 +1145,15 @@ curl -X POST http://localhost:8080/api/v1/projects \
 | 1.0.9 | 2025-10-16 | Phase 1.5 | Dual ID implementation complete (pending testing) |
 | 1.1.0 | 2025-10-17 | Phase 2.1 | Template Engine & Code Generator complete ✅ |
 | 1.2.0 | 2025-10-28 | Phase 2.2 | Entity & Endpoint handlers complete ✅ |
-| 1.3.0 | TBD | Phase 2.3 | GitLab integration (pending) |
-| 1.4.0 | TBD | Phase 3 | UI dashboard enhancement (pending) |
-| 1.5.0 | TBD | Phase 4 | Testing & deployment features (pending) |
+| 1.3.0 | 2025-12-22 | Phase 2.4 | UI Enhancement & Local Deployment ✅ |
+| 1.4.0 | TBD | Phase 2.3 | GitLab integration (optional) |
+| 1.5.0 | TBD | Phase 3 | UI dashboard enhancement (pending) |
+| 1.6.0 | TBD | Phase 4 | Testing & deployment features (pending) |
 
 ---
 
-**Last Review:** 2025-10-28 (Entity & Endpoint Management Complete)
-**Next Review:** Phase 2.3 - GitLab Integration
+**Last Review:** 2025-12-22 (UI Enhancement & Local Deployment Complete)
+**Next Review:** Phase 3 - Dashboard Enhancement or Phase 2.3 - GitLab Integration
 **Maintained By:** Development Team
 
 **Note for Next Session:**
@@ -1058,13 +1161,15 @@ curl -X POST http://localhost:8080/api/v1/projects \
 - ✅ Template Engine & Code Generator (75.4% test coverage)
 - ✅ Entity & Endpoint Management (Backend + Frontend complete)
 - ✅ ServiceDetail page with dynamic forms
-- ✅ API tested via curl, frontend ready for browser testing
-- ⏳ Need to implement GitLab Integration (Phase 2.3)
-  - GitLab API client wrapper
-  - Workspace manager for code generation
-  - Generate & push code to repository
-  - Branch management (develop/staging/production)
-- Ready to proceed to Phase 2.3
+- ✅ Generator API fixed to use UUID
+- ✅ Code Preview Modal with syntax highlighting
+- ✅ Local Docker Deployment feature complete
+  - Deploy/Start/Stop service controls
+  - Status indicator (running/stopped/not_deployed)
+  - Auto-refresh status polling
+- ⏳ Optional: GitLab Integration (Phase 2.3)
+- ⏳ Next: Phase 3 - Dashboard Enhancement or additional features
+- Docker services: MySQL on port 3307 (to avoid WSL conflict)
 
 ---
 

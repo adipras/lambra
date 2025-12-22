@@ -1,6 +1,8 @@
 package router
 
 import (
+	"os"
+
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
 	"github.com/yourusername/lambra/internal/api/handlers"
@@ -10,6 +12,11 @@ import (
 )
 
 func Setup(db *sqlx.DB) *gin.Engine {
+	// Get workspace path from environment
+	workspacePath := os.Getenv("WORKSPACE_PATH")
+	if workspacePath == "" {
+		workspacePath = "/workspace"
+	}
 	router := gin.New()
 
 	// Middleware
@@ -27,6 +34,7 @@ func Setup(db *sqlx.DB) *gin.Engine {
 	entityService := service.NewEntityService(entityRepo, projectRepo)
 	endpointService := service.NewEndpointService(endpointRepo, entityRepo, projectRepo)
 	generatorService := service.NewGeneratorService(projectRepo, entityRepo, endpointRepo)
+	deploymentService := service.NewDeploymentService(projectRepo, entityRepo, endpointRepo, generatorService, workspacePath)
 
 	// Initialize handlers
 	healthHandler := handlers.NewHealthHandler(db)
@@ -34,6 +42,7 @@ func Setup(db *sqlx.DB) *gin.Engine {
 	entityHandler := handlers.NewEntityHandler(entityService)
 	endpointHandler := handlers.NewEndpointHandler(endpointService)
 	generatorHandler := handlers.NewGeneratorHandler(generatorService)
+	deploymentHandler := handlers.NewDeploymentHandler(deploymentService)
 
 	// Health check routes
 	router.GET("/health", healthHandler.HealthCheck)
@@ -55,6 +64,12 @@ func Setup(db *sqlx.DB) *gin.Engine {
 			projects.POST("/:id/entities", entityHandler.CreateEntity)
 			projects.GET("/:id/entities", entityHandler.GetEntitiesByProject)
 			projects.GET("/:id/endpoints", endpointHandler.GetEndpointsByProject)
+
+			// Deployment routes
+			projects.POST("/:id/deploy", deploymentHandler.DeployProject)
+			projects.POST("/:id/start", deploymentHandler.StartService)
+			projects.POST("/:id/stop", deploymentHandler.StopService)
+			projects.GET("/:id/status", deploymentHandler.GetServiceStatus)
 		}
 
 		// Entities

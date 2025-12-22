@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/yourusername/lambra/internal/service"
@@ -22,14 +21,14 @@ func NewGeneratorHandler(service *service.GeneratorService) *GeneratorHandler {
 
 // GenerateEntityRequest represents a request to generate code for an entity
 type GenerateEntityRequest struct {
-	EntityID  int64  `json:"entity_id" binding:"required"`
-	OutputDir string `json:"output_dir"`
+	EntityUUID string `json:"entity_id" binding:"required"`
+	OutputDir  string `json:"output_dir"`
 }
 
 // GenerateProjectRequest represents a request to generate code for a project
 type GenerateProjectRequest struct {
-	ProjectID int64  `json:"project_id" binding:"required"`
-	OutputDir string `json:"output_dir"`
+	ProjectUUID string `json:"project_id" binding:"required"`
+	OutputDir   string `json:"output_dir"`
 }
 
 // GenerateEntity generates code for a specific entity
@@ -54,7 +53,7 @@ func (h *GeneratorHandler) GenerateEntity(c *gin.Context) {
 		req.OutputDir = "./generated"
 	}
 
-	response, err := h.service.GenerateEntity(c.Request.Context(), req.EntityID, req.OutputDir)
+	response, err := h.service.GenerateEntityByUUID(c.Request.Context(), req.EntityUUID, req.OutputDir)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -85,7 +84,7 @@ func (h *GeneratorHandler) GenerateProject(c *gin.Context) {
 		req.OutputDir = "./generated"
 	}
 
-	response, err := h.service.GenerateProject(c.Request.Context(), req.ProjectID, req.OutputDir)
+	response, err := h.service.GenerateProjectByUUID(c.Request.Context(), req.ProjectUUID, req.OutputDir)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -100,19 +99,19 @@ func (h *GeneratorHandler) GenerateProject(c *gin.Context) {
 // @Tags generator
 // @Accept json
 // @Produce json
-// @Param id path int true "Entity ID"
+// @Param id path string true "Entity UUID"
 // @Success 200 {object} service.GenerateCodeResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /api/v1/generate/preview/:id [get]
 func (h *GeneratorHandler) PreviewEntity(c *gin.Context) {
-	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
+	entityUUID := c.Param("id")
+	if entityUUID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid entity ID"})
 		return
 	}
 
-	response, err := h.service.PreviewEntity(c.Request.Context(), entityID)
+	response, err := h.service.PreviewEntityByUUID(c.Request.Context(), entityUUID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -127,19 +126,19 @@ func (h *GeneratorHandler) PreviewEntity(c *gin.Context) {
 // @Tags generator
 // @Accept json
 // @Produce json
-// @Param id path int true "Entity ID"
+// @Param id path string true "Entity UUID"
 // @Success 200 {object} map[string][]string
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /api/v1/generate/files/:id [get]
 func (h *GeneratorHandler) GetGeneratedFilesList(c *gin.Context) {
-	entityID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
+	entityUUID := c.Param("id")
+	if entityUUID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid entity ID"})
 		return
 	}
 
-	files, err := h.service.GetGeneratedFilesList(c.Request.Context(), entityID)
+	files, err := h.service.GetGeneratedFilesListByUUID(c.Request.Context(), entityUUID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

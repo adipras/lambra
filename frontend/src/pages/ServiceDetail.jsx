@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, Code } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Code, Play, Eye, X, FileCode, Check, AlertCircle, Square, Rocket, ExternalLink, RefreshCw } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi } from '../api/projects'
 import { entitiesApi } from '../api/entities'
 import { endpointsApi } from '../api/endpoints'
+import { generatorApi } from '../api/generator'
+import { deploymentApi } from '../api/deployment'
 import { LoadingSpinner } from '../components/shared/LoadingSpinner'
 import { ErrorAlert } from '../components/shared/ErrorAlert'
 import { StatusBadge } from '../components/shared/StatusBadge'
@@ -18,7 +20,10 @@ export const ServiceDetail = () => {
 
   const [showEntityModal, setShowEntityModal] = useState(false)
   const [showEndpointModal, setShowEndpointModal] = useState(false)
+  const [showPreviewModal, setShowPreviewModal] = useState(false)
   const [selectedEntity, setSelectedEntity] = useState(null)
+  const [previewEntity, setPreviewEntity] = useState(null)
+  const [notification, setNotification] = useState(null)
 
   // Fetch project
   const { data: projectData, isLoading: projectLoading, error: projectError } = useQuery({
@@ -67,6 +72,97 @@ export const ServiceDetail = () => {
     },
   })
 
+  // Preview code query
+  const { data: previewData, isLoading: previewLoading, refetch: refetchPreview } = useQuery({
+    queryKey: ['preview', previewEntity?.id],
+    queryFn: () => generatorApi.previewEntity(previewEntity.id),
+    enabled: !!previewEntity,
+  })
+
+  // Generate project mutation
+  const generateProjectMutation = useMutation({
+    mutationFn: () => generatorApi.generateProject(id),
+    onSuccess: (response) => {
+      showNotification('success', `Generated ${response.data?.files?.length || 0} files successfully!`)
+    },
+    onError: (error) => {
+      showNotification('error', error.response?.data?.error || 'Failed to generate code')
+    },
+  })
+
+  // Generate entity mutation
+  const generateEntityMutation = useMutation({
+    mutationFn: (entityId) => generatorApi.generateEntity(entityId),
+    onSuccess: (response) => {
+      showNotification('success', `Generated ${response.data?.files?.length || 0} files for entity!`)
+    },
+    onError: (error) => {
+      showNotification('error', error.response?.data?.error || 'Failed to generate code')
+    },
+  })
+
+  const showNotification = (type, message) => {
+    setNotification({ type, message })
+    setTimeout(() => setNotification(null), 5000)
+  }
+
+  const handlePreview = (entity) => {
+    setPreviewEntity(entity)
+    setShowPreviewModal(true)
+  }
+
+  // Fetch deployment status
+  const { data: statusData, refetch: refetchStatus } = useQuery({
+    queryKey: ['deployment-status', id],
+    queryFn: () => deploymentApi.getStatus(id),
+    refetchInterval: (data) => {
+      // Poll every 5 seconds if service is running
+      return data?.data?.status === 'running' ? 5000 : false
+    },
+  })
+
+  const deploymentStatus = statusData?.data
+
+  // Deploy mutation
+  const deployMutation = useMutation({
+    mutationFn: () => deploymentApi.deploy(id),
+    onSuccess: (response) => {
+      showNotification('success', `Service deployed! URL: ${response.data?.data?.url || 'N/A'}`)
+      refetchStatus()
+    },
+    onError: (error) => {
+      showNotification('error', error.response?.data?.message || 'Failed to deploy service')
+    },
+  })
+
+  // Start mutation
+  const startMutation = useMutation({
+    mutationFn: () => deploymentApi.start(id),
+    onSuccess: () => {
+      showNotification('success', 'Service started successfully')
+      refetchStatus()
+    },
+    onError: (error) => {
+      showNotification('error', error.response?.data?.message || 'Failed to start service')
+    },
+  })
+
+  // Stop mutation
+  const stopMutation = useMutation({
+    mutationFn: () => deploymentApi.stop(id),
+    onSuccess: () => {
+      showNotification('success', 'Service stopped successfully')
+      refetchStatus()
+    },
+    onError: (error) => {
+      showNotification('error', error.response?.data?.message || 'Failed to stop service')
+    },
+  })
+
+  const isDeploying = deployMutation.isPending
+  const isStarting = startMutation.isPending
+  const isStopping = stopMutation.isPending
+
   if (projectLoading) {
     return <LoadingSpinner size="lg" className="mt-20" />
   }
@@ -92,6 +188,25 @@ export const ServiceDetail = () => {
 
   return (
     <div className="space-y-6">
+      {/* Notification */}
+      {notification && (
+        <div className={`fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg ${
+          notification.type === 'success'
+            ? 'bg-green-50 text-green-800 border border-green-200'
+            : 'bg-red-50 text-red-800 border border-red-200'
+        }`}>
+          {notification.type === 'success' ? (
+            <Check className="w-5 h-5" />
+          ) : (
+            <AlertCircle className="w-5 h-5" />
+          )}
+          <span>{notification.message}</span>
+          <button onClick={() => setNotification(null)} className="ml-2">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -106,11 +221,99 @@ export const ServiceDetail = () => {
             <p className="text-gray-600 mt-1">{project?.description || 'No description'}</p>
           </div>
         </div>
-        <StatusBadge status={project?.status} />
+        <div className="flex items-center gap-3">
+          <StatusBadge status={project?.status} />
+
+          {/* Deployment Status & Controls */}
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 rounded-lg">
+            <div className={`w-2 h-2 rounded-full ${
+              deploymentStatus?.status === 'running' ? 'bg-green-500 animate-pulse' :
+              deploymentStatus?.status === 'stopped' ? 'bg-yellow-500' : 'bg-gray-400'
+            }`} />
+            <span className="text-sm font-medium text-gray-700 capitalize">
+              {deploymentStatus?.status || 'not deployed'}
+            </span>
+            {deploymentStatus?.url && deploymentStatus?.status === 'running' && (
+              <a
+                href={deploymentStatus.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:text-blue-700"
+              >
+                <ExternalLink className="w-4 h-4" />
+              </a>
+            )}
+          </div>
+
+          {/* Action Buttons */}
+          {deploymentStatus?.status === 'running' ? (
+            <button
+              onClick={() => stopMutation.mutate()}
+              disabled={isStopping}
+              className="btn bg-red-600 hover:bg-red-700 text-white flex items-center gap-2"
+            >
+              {isStopping ? (
+                <>
+                  <LoadingSpinner size="sm" />
+                  Stopping...
+                </>
+              ) : (
+                <>
+                  <Square className="w-4 h-4" />
+                  Stop
+                </>
+              )}
+            </button>
+          ) : deploymentStatus?.status === 'stopped' ? (
+            <button
+              onClick={() => startMutation.mutate()}
+              disabled={isStarting}
+              className="btn bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
+            >
+              {isStarting ? (
+                <>
+                  <LoadingSpinner size="sm" />
+                  Starting...
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4" />
+                  Start
+                </>
+              )}
+            </button>
+          ) : (
+            <button
+              onClick={() => deployMutation.mutate()}
+              disabled={isDeploying || entities.length === 0}
+              className="btn bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-2"
+            >
+              {isDeploying ? (
+                <>
+                  <LoadingSpinner size="sm" />
+                  Deploying...
+                </>
+              ) : (
+                <>
+                  <Rocket className="w-4 h-4" />
+                  Deploy
+                </>
+              )}
+            </button>
+          )}
+
+          <button
+            onClick={() => refetchStatus()}
+            className="btn btn-secondary p-2"
+            title="Refresh Status"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Project Info */}
-      <div className="card grid grid-cols-3 gap-6">
+      <div className="card grid grid-cols-4 gap-6">
         <div>
           <p className="text-sm text-gray-600">Namespace</p>
           <p className="font-medium text-gray-900">{project?.namespace}</p>
@@ -124,6 +327,22 @@ export const ServiceDetail = () => {
           <p className="font-medium text-gray-900">
             {new Date(project?.created_at).toLocaleDateString()}
           </p>
+        </div>
+        <div>
+          <p className="text-sm text-gray-600">Service URL</p>
+          {deploymentStatus?.url && deploymentStatus?.status === 'running' ? (
+            <a
+              href={deploymentStatus.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1"
+            >
+              {deploymentStatus.url}
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          ) : (
+            <p className="font-medium text-gray-400">Not running</p>
+          )}
         </div>
       </div>
 
@@ -165,6 +384,7 @@ export const ServiceDetail = () => {
                 }}
                 onDelete={() => handleDeleteEntity(entity.id)}
                 onDeleteEndpoint={handleDeleteEndpoint}
+                onPreview={() => handlePreview(entity)}
               />
             ))}
           </div>
@@ -203,12 +423,31 @@ export const ServiceDetail = () => {
           </div>
         </div>
       )}
+
+      {/* Code Preview Modal */}
+      {showPreviewModal && previewEntity && (
+        <CodePreviewModal
+          entity={previewEntity}
+          files={previewData?.data?.files || []}
+          isLoading={previewLoading}
+          onClose={() => {
+            setShowPreviewModal(false)
+            setPreviewEntity(null)
+          }}
+          onGenerate={() => {
+            generateEntityMutation.mutate(previewEntity.id)
+            setShowPreviewModal(false)
+            setPreviewEntity(null)
+          }}
+          isGenerating={generateEntityMutation.isPending}
+        />
+      )}
     </div>
   )
 }
 
 // EntityCard component
-const EntityCard = ({ entity, onAddEndpoint, onDelete, onDeleteEndpoint }) => {
+const EntityCard = ({ entity, onAddEndpoint, onDelete, onDeleteEndpoint, onPreview }) => {
   const { data: endpointsData } = useQuery({
     queryKey: ['entity-endpoints', entity.id],
     queryFn: () => endpointsApi.getByEntity(entity.id),
@@ -238,6 +477,13 @@ const EntityCard = ({ entity, onAddEndpoint, onDelete, onDeleteEndpoint }) => {
           )}
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={onPreview}
+            className="text-indigo-600 hover:text-indigo-700"
+            title="Preview Generated Code"
+          >
+            <Eye className="w-4 h-4" />
+          </button>
           <button
             onClick={onAddEndpoint}
             className="text-blue-600 hover:text-blue-700"
@@ -304,6 +550,115 @@ const EntityCard = ({ entity, onAddEndpoint, onDelete, onDeleteEndpoint }) => {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// CodePreviewModal component
+const CodePreviewModal = ({ entity, files, isLoading, onClose, onGenerate, isGenerating }) => {
+  const [selectedFile, setSelectedFile] = useState(0)
+
+  const getLayerColor = (layer) => {
+    const colors = {
+      model: 'bg-blue-100 text-blue-800',
+      repository: 'bg-green-100 text-green-800',
+      service: 'bg-purple-100 text-purple-800',
+      handler: 'bg-orange-100 text-orange-800',
+      dto: 'bg-pink-100 text-pink-800',
+      migration: 'bg-yellow-100 text-yellow-800',
+    }
+    return colors[layer] || 'bg-gray-100 text-gray-800'
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg w-full max-w-6xl max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">Generated Code Preview</h2>
+            <p className="text-sm text-gray-600">Entity: {entity.name}</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onGenerate}
+              disabled={isGenerating || isLoading}
+              className="btn btn-primary flex items-center gap-2"
+            >
+              {isGenerating ? (
+                <>
+                  <LoadingSpinner size="sm" />
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4" />
+                  Generate Files
+                </>
+              )}
+            </button>
+            <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+        </div>
+
+        {isLoading ? (
+          <div className="flex-1 flex items-center justify-center">
+            <LoadingSpinner size="lg" />
+          </div>
+        ) : files.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center text-gray-500">
+            No files to preview
+          </div>
+        ) : (
+          <div className="flex-1 flex overflow-hidden">
+            {/* File List Sidebar */}
+            <div className="w-64 border-r bg-gray-50 overflow-y-auto">
+              <div className="p-2">
+                <p className="text-xs font-medium text-gray-500 uppercase px-2 py-1">
+                  Files ({files.length})
+                </p>
+                {files.map((file, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setSelectedFile(idx)}
+                    className={`w-full text-left px-3 py-2 rounded-lg mb-1 transition-colors ${
+                      selectedFile === idx
+                        ? 'bg-indigo-100 text-indigo-900'
+                        : 'hover:bg-gray-100 text-gray-700'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <FileCode className="w-4 h-4 flex-shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {file.path.split('/').pop()}
+                        </p>
+                        <span className={`inline-block text-xs px-1.5 py-0.5 rounded ${getLayerColor(file.layer)}`}>
+                          {file.layer}
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Code Preview */}
+            <div className="flex-1 overflow-hidden flex flex-col">
+              <div className="px-4 py-2 bg-gray-100 border-b">
+                <p className="text-sm font-mono text-gray-600">{files[selectedFile]?.path}</p>
+              </div>
+              <div className="flex-1 overflow-auto">
+                <pre className="p-4 text-sm font-mono text-gray-800 whitespace-pre-wrap">
+                  {files[selectedFile]?.content}
+                </pre>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
