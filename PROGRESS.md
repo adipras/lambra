@@ -1270,4 +1270,36 @@ curl -X POST http://localhost:8080/api/v1/projects \
 
 ---
 
+## 🐛 Known Issues (2025-12-23)
+
+### Code Generation & Deployment Issues
+
+**Issue 1: DTO template type mismatch**
+- **Location:** `internal/generator/templates.go` - dtoTemplate
+- **Error:** `cannot use user.DeletedAt (variable of type sql.NullTime) as *time.Time value`
+- **Cause:** Model uses `sql.NullTime` for DeletedAt, but DTO Response template uses `*time.Time`
+- **Fix Needed:** Update DTO template to use `sql.NullTime` or convert properly
+
+**Issue 2: Redeploy feature fixed**
+- ✅ FIXED: Redeploy now regenerates code before rebuilding Docker container
+- ✅ FIXED: File paths no longer duplicated (was `/workspace/x/workspace/x/...`)
+- ✅ FIXED: toKebabCase function consistent between deployment_service and template_engine
+
+**Issue 3: STOP command fixed**
+- ✅ FIXED: Changed from `docker compose down` to `docker compose stop` (container preserved)
+
+**Issue 4: Export Postman fixed**
+- ✅ FIXED: axios interceptor returns `response.data` directly, so download functions now use blob directly
+
+### Fixes Applied (Session 2025-12-23)
+1. ✅ STOP command - uses `docker compose stop` instead of `down`
+2. ✅ Added Redeploy feature with code regeneration
+3. ✅ Fixed Postman/OpenAPI export (axios blob handling)
+4. ✅ Fixed file path duplication in deployment
+5. ✅ Fixed toKebabCase double-dash issue
+6. ✅ Fixed model template to include base fields directly (not embed BaseEntity)
+7. ⏳ PENDING: DTO template DeletedAt type mismatch
+
+---
+
 *This file should be updated after each major milestone or at the end of each development session.*

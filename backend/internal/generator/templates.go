@@ -4,17 +4,23 @@ package generator
 const modelTemplate = `package {{ .PackageName }}
 
 import (
-{{- range .Imports }}
-	"{{ . }}"
-{{- end }}
+	"database/sql"
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
 )
 
 // {{ .EntityName }} represents a {{ toLower .EntityName }} entity
 type {{ .EntityName }} struct {
-	BaseEntity
+	ID        int64          ` + "`" + `json:"-" db:"id"` + "`" + `
+	UUID      uuid.UUID      ` + "`" + `json:"id" db:"uuid"` + "`" + `
 {{- range .Fields }}
-	{{ .Name }} {{ .GoType }} ` + "`" + `{{ .JSONTag }} {{ .DBTag }}{{ if .ValidateTag }} {{ .ValidateTag }}{{ end }}` + "`" + ` // {{ .Description }}
+	{{ .Name }} {{ .GoType }} ` + "`" + `{{ .JSONTag }} {{ .DBTag }}{{ if .ValidateTag }} {{ .ValidateTag }}{{ end }}` + "`" + `{{ if .Description }} // {{ .Description }}{{ end }}
 {{- end }}
+	CreatedAt time.Time      ` + "`" + `json:"created_at" db:"created_at"` + "`" + `
+	UpdatedAt time.Time      ` + "`" + `json:"updated_at" db:"updated_at"` + "`" + `
+	DeletedAt sql.NullTime   ` + "`" + `json:"-" db:"deleted_at"` + "`" + `
 }
 
 // TableName returns the table name for {{ .EntityName }}
@@ -26,7 +32,7 @@ func ({{ .EntityNameLC }} *{{ .EntityName }}) TableName() string {
 func ({{ .EntityNameLC }} *{{ .EntityName }}) Validate() error {
 {{- range .Fields }}
 {{- if .Required }}
-	if {{ $.EntityNameLC }}.{{ .Name }} == {{ if eq .GoType "string" }}""{{ else }}nil{{ end }} {
+	if {{ $.EntityNameLC }}.{{ .Name }} == {{ if eq .GoType "string" }}""{{ else if eq .GoType "int" }}0{{ else if eq .GoType "int64" }}0{{ else }}nil{{ end }} {
 		return fmt.Errorf("{{ .NameLC }} is required")
 	}
 {{- end }}

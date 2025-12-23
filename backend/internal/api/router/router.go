@@ -71,6 +71,7 @@ func Setup(db *sqlx.DB) *gin.Engine {
 			projects.POST("/:id/deploy", deploymentHandler.DeployProject)
 			projects.POST("/:id/start", deploymentHandler.StartService)
 			projects.POST("/:id/stop", deploymentHandler.StopService)
+			projects.POST("/:id/redeploy", deploymentHandler.RedeployService)
 			projects.GET("/:id/status", deploymentHandler.GetServiceStatus)
 
 			// Export routes

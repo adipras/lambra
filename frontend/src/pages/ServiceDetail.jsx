@@ -161,9 +161,22 @@ export const ServiceDetail = () => {
     },
   })
 
+  // Redeploy mutation
+  const redeployMutation = useMutation({
+    mutationFn: () => deploymentApi.redeploy(id),
+    onSuccess: (response) => {
+      showNotification('success', `Service redeployed! URL: ${response.data?.data?.url || 'N/A'}`)
+      refetchStatus()
+    },
+    onError: (error) => {
+      showNotification('error', error.response?.data?.message || 'Failed to redeploy service')
+    },
+  })
+
   const isDeploying = deployMutation.isPending
   const isStarting = startMutation.isPending
   const isStopping = stopMutation.isPending
+  const isRedeploying = redeployMutation.isPending
 
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
@@ -278,41 +291,81 @@ export const ServiceDetail = () => {
 
           {/* Action Buttons */}
           {deploymentStatus?.status === 'running' ? (
-            <button
-              onClick={() => stopMutation.mutate()}
-              disabled={isStopping}
-              className="btn bg-red-600 hover:bg-red-700 text-white flex items-center gap-2"
-            >
-              {isStopping ? (
-                <>
-                  <LoadingSpinner size="sm" />
-                  Stopping...
-                </>
-              ) : (
-                <>
-                  <Square className="w-4 h-4" />
-                  Stop
-                </>
-              )}
-            </button>
+            <>
+              <button
+                onClick={() => stopMutation.mutate()}
+                disabled={isStopping || isRedeploying}
+                className="btn bg-red-600 hover:bg-red-700 text-white flex items-center gap-2"
+              >
+                {isStopping ? (
+                  <>
+                    <LoadingSpinner size="sm" />
+                    Stopping...
+                  </>
+                ) : (
+                  <>
+                    <Square className="w-4 h-4" />
+                    Stop
+                  </>
+                )}
+              </button>
+              <button
+                onClick={() => redeployMutation.mutate()}
+                disabled={isRedeploying || isStopping}
+                className="btn bg-orange-600 hover:bg-orange-700 text-white flex items-center gap-2"
+                title="Redeploy (clear cache)"
+              >
+                {isRedeploying ? (
+                  <>
+                    <LoadingSpinner size="sm" />
+                    Redeploying...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-4 h-4" />
+                    Redeploy
+                  </>
+                )}
+              </button>
+            </>
           ) : deploymentStatus?.status === 'stopped' ? (
-            <button
-              onClick={() => startMutation.mutate()}
-              disabled={isStarting}
-              className="btn bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
-            >
-              {isStarting ? (
-                <>
-                  <LoadingSpinner size="sm" />
-                  Starting...
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4" />
-                  Start
-                </>
-              )}
-            </button>
+            <>
+              <button
+                onClick={() => startMutation.mutate()}
+                disabled={isStarting || isRedeploying}
+                className="btn bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
+              >
+                {isStarting ? (
+                  <>
+                    <LoadingSpinner size="sm" />
+                    Starting...
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-4 h-4" />
+                    Start
+                  </>
+                )}
+              </button>
+              <button
+                onClick={() => redeployMutation.mutate()}
+                disabled={isRedeploying || isStarting}
+                className="btn bg-orange-600 hover:bg-orange-700 text-white flex items-center gap-2"
+                title="Redeploy (clear cache)"
+              >
+                {isRedeploying ? (
+                  <>
+                    <LoadingSpinner size="sm" />
+                    Redeploying...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-4 h-4" />
+                    Redeploy
+                  </>
+                )}
+              </button>
+            </>
           ) : (
             <button
               onClick={() => deployMutation.mutate()}

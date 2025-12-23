@@ -16,6 +16,11 @@ export const deploymentApi = {
     return axios.post(`/projects/${projectId}/stop`)
   },
 
+  // Redeploy a service (down + up for cache clearing)
+  redeploy: async (projectId) => {
+    return axios.post(`/projects/${projectId}/redeploy`)
+  },
+
   // Get service deployment status
   getStatus: async (projectId) => {
     return axios.get(`/projects/${projectId}/status`)

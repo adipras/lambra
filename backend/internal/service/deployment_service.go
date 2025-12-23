@@ -79,8 +79,8 @@ func (s *DeploymentService) DeployProject(ctx context.Context, projectUUID strin
 		return nil, fmt.Errorf("failed to create service directory: %w", err)
 	}
 
-	// Generate code
-	response, err := s.generatorSvc.GenerateProjectByUUID(ctx, projectUUID, serviceDir)
+	// Generate code (pass empty string so file paths are relative)
+	response, err := s.generatorSvc.GenerateProjectByUUID(ctx, projectUUID, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate code: %w", err)
 	}
@@ -110,7 +110,7 @@ func (s *DeploymentService) DeployProject(ctx context.Context, projectUUID strin
 	}
 
 	// Build and start the service
-	if err := s.startService(serviceDir, serviceName); err != nil {
+	if err := s.startService(serviceDir); err != nil {
 		return nil, fmt.Errorf("failed to start service: %w", err)
 	}
 
@@ -138,7 +138,7 @@ func (s *DeploymentService) StartService(ctx context.Context, projectUUID string
 		return nil, fmt.Errorf("service not deployed, please deploy first")
 	}
 
-	if err := s.startService(serviceDir, serviceName); err != nil {
+	if err := s.startService(serviceDir); err != nil {
 		return nil, fmt.Errorf("failed to start service: %w", err)
 	}
 
@@ -180,6 +180,70 @@ func (s *DeploymentService) StopService(ctx context.Context, projectUUID string)
 		ProjectID:   projectUUID,
 		ServiceName: serviceName,
 		Status:      "stopped",
+	}, nil
+}
+
+// RedeployService redeploys a service (regenerate code + down + up)
+func (s *DeploymentService) RedeployService(ctx context.Context, projectUUID string) (*ServiceStatus, error) {
+	project, err := s.projectRepo.GetByUUID(projectUUID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get project: %w", err)
+	}
+
+	serviceName := toKebabCase(project.Name)
+	serviceDir := filepath.Join(s.workspacePath, serviceName)
+
+	// Check if service directory exists
+	if _, err := os.Stat(serviceDir); os.IsNotExist(err) {
+		return nil, fmt.Errorf("service not deployed, please deploy first")
+	}
+
+	// Stop and remove containers (docker compose down)
+	if err := s.destroyService(serviceDir); err != nil {
+		return nil, fmt.Errorf("failed to stop service: %w", err)
+	}
+
+	// Regenerate code (pass empty string so file paths are relative)
+	response, err := s.generatorSvc.GenerateProjectByUUID(ctx, projectUUID, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to regenerate code: %w", err)
+	}
+
+	// Write regenerated files
+	for _, file := range response.Files {
+		filePath := filepath.Join(serviceDir, file.Path)
+		if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+			return nil, fmt.Errorf("failed to create directory for %s: %w", file.Path, err)
+		}
+		if err := os.WriteFile(filePath, []byte(file.Content), 0644); err != nil {
+			return nil, fmt.Errorf("failed to write file %s: %w", file.Path, err)
+		}
+	}
+
+	port := s.getPortForProject(project.ID)
+
+	// Regenerate Docker files
+	if err := s.generateDockerFiles(project, serviceDir, port); err != nil {
+		return nil, fmt.Errorf("failed to regenerate Docker files: %w", err)
+	}
+
+	// Regenerate main.go with routes
+	if err := s.generateGoFiles(project, serviceDir, port); err != nil {
+		return nil, fmt.Errorf("failed to regenerate Go files: %w", err)
+	}
+
+	// Rebuild and start (docker compose up -d --build)
+	if err := s.startService(serviceDir); err != nil {
+		return nil, fmt.Errorf("failed to restart service: %w", err)
+	}
+
+	return &ServiceStatus{
+		ProjectID:   projectUUID,
+		ServiceName: serviceName,
+		Status:      "running",
+		Port:        port,
+		URL:         fmt.Sprintf("http://localhost:%d", port),
+		StartedAt:   time.Now().Format(time.RFC3339),
 	}, nil
 }
 
@@ -227,7 +291,7 @@ func (s *DeploymentService) getPortForProject(projectID int64) int {
 	return s.basePort + int(projectID%1000)
 }
 
-func (s *DeploymentService) startService(serviceDir, serviceName string) error {
+func (s *DeploymentService) startService(serviceDir string) error {
 	cmd := exec.Command("docker", "compose", "up", "-d", "--build")
 	cmd.Dir = serviceDir
 	cmd.Stdout = os.Stdout
@@ -236,7 +300,15 @@ func (s *DeploymentService) startService(serviceDir, serviceName string) error {
 }
 
 func (s *DeploymentService) stopService(serviceDir string) error {
-	cmd := exec.Command("docker", "compose", "down")
+	cmd := exec.Command("docker", "compose", "stop")
+	cmd.Dir = serviceDir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func (s *DeploymentService) destroyService(serviceDir string) error {
+	cmd := exec.Command("docker", "compose", "down", "-v")
 	cmd.Dir = serviceDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -360,6 +432,12 @@ CMD ["./main"]
 func (s *DeploymentService) generateGoFiles(project *models.Project, serviceDir string, port int) error {
 	serviceName := toKebabCase(project.Name)
 
+	// Get entities for this project
+	entities, err := s.entityRepo.GetByProjectID(project.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get entities: %w", err)
+	}
+
 	// go.mod
 	goModContent := fmt.Sprintf(`module %s
 
@@ -383,6 +461,48 @@ require (
 		return err
 	}
 
+	// Build imports, initializations, and routes for each entity
+	var imports strings.Builder
+	var inits strings.Builder
+	var routes strings.Builder
+
+	imports.WriteString(fmt.Sprintf("\t\"%s/repository\"\n", serviceName))
+	imports.WriteString(fmt.Sprintf("\t\"%s/service\"\n", serviceName))
+	imports.WriteString(fmt.Sprintf("\t\"%s/api/handlers\"\n", serviceName))
+
+	for _, entity := range entities {
+		entityNameLower := strings.ToLower(entity.Name[:1]) + entity.Name[1:]
+		entityNameSnake := toSnakeCase(entity.Name)
+
+		// Repository, Service, Handler initialization
+		inits.WriteString(fmt.Sprintf("\t%sRepo := repository.New%sRepository(db)\n", entityNameLower, entity.Name))
+		inits.WriteString(fmt.Sprintf("\t%sSvc := service.New%sService(%sRepo)\n", entityNameLower, entity.Name, entityNameLower))
+		inits.WriteString(fmt.Sprintf("\t%sHandler := handlers.New%sHandler(%sSvc)\n\n", entityNameLower, entity.Name, entityNameLower))
+
+		// Get endpoints for this entity
+		endpoints, err := s.endpointRepo.GetByEntityID(entity.ID)
+		if err != nil {
+			continue
+		}
+
+		// Generate routes for each endpoint
+		for _, endpoint := range endpoints {
+			handlerMethod := toPascalCase(endpoint.Name)
+			routes.WriteString(fmt.Sprintf("\tr.%s(\"%s\", %sHandler.%s)\n",
+				endpoint.Method, endpoint.Path, entityNameLower, handlerMethod))
+		}
+
+		// Add default CRUD routes if no custom endpoints
+		if len(endpoints) == 0 {
+			basePath := "/" + entityNameSnake + "s"
+			routes.WriteString(fmt.Sprintf("\tr.GET(\"%s\", %sHandler.GetAll)\n", basePath, entityNameLower))
+			routes.WriteString(fmt.Sprintf("\tr.GET(\"%s/:id\", %sHandler.GetByID)\n", basePath, entityNameLower))
+			routes.WriteString(fmt.Sprintf("\tr.POST(\"%s\", %sHandler.Create)\n", basePath, entityNameLower))
+			routes.WriteString(fmt.Sprintf("\tr.PUT(\"%s/:id\", %sHandler.Update)\n", basePath, entityNameLower))
+			routes.WriteString(fmt.Sprintf("\tr.DELETE(\"%s/:id\", %sHandler.Delete)\n", basePath, entityNameLower))
+		}
+	}
+
 	// main.go
 	mainGoContent := fmt.Sprintf(`package main
 
@@ -394,7 +514,7 @@ import (
 	"github.com/gin-gonic/gin"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
-)
+%s)
 
 func main() {
 	port := os.Getenv("PORT")
@@ -413,12 +533,13 @@ func main() {
 
 	db, err := sqlx.Connect("mysql", dsn)
 	if err != nil {
-		log.Printf("Warning: Could not connect to database: %%v", err)
-	} else {
-		defer db.Close()
-		log.Println("Database connected successfully")
+		log.Fatalf("Failed to connect to database: %%v", err)
 	}
+	defer db.Close()
+	log.Println("Database connected successfully")
 
+	// Initialize repositories, services, and handlers
+%s
 	r := gin.Default()
 
 	// Health check
@@ -429,14 +550,14 @@ func main() {
 		})
 	})
 
-	// TODO: Add generated handlers here
-
+	// Entity routes
+%s
 	log.Printf("Server starting on port %%s", port)
 	if err := r.Run(":" + port); err != nil {
 		log.Fatal(err)
 	}
 }
-`, port, serviceName)
+`, imports.String(), port, inits.String(), serviceName, routes.String())
 
 	if err := os.WriteFile(filepath.Join(cmdDir, "main.go"), []byte(mainGoContent), 0644); err != nil {
 		return err
@@ -448,6 +569,33 @@ func main() {
 	cmd.Run() // Ignore error, it might fail without network
 
 	return nil
+}
+
+func toSnakeCase(s string) string {
+	var result []rune
+	for i, r := range s {
+		if r >= 'A' && r <= 'Z' {
+			if i > 0 {
+				result = append(result, '_')
+			}
+			result = append(result, r+32) // Convert to lowercase
+		} else {
+			result = append(result, r)
+		}
+	}
+	return string(result)
+}
+
+func toPascalCase(s string) string {
+	words := strings.FieldsFunc(s, func(r rune) bool {
+		return r == ' ' || r == '_' || r == '-'
+	})
+	for i := range words {
+		if len(words[i]) > 0 {
+			words[i] = strings.ToUpper(words[i][:1]) + strings.ToLower(words[i][1:])
+		}
+	}
+	return strings.Join(words, "")
 }
 
 func (s *DeploymentService) renderTemplate(tmplStr string, data interface{}, outputPath string) error {
@@ -466,16 +614,22 @@ func (s *DeploymentService) renderTemplate(tmplStr string, data interface{}, out
 
 func toKebabCase(s string) string {
 	var result []rune
+	var lastWasDash bool
 	for i, r := range s {
 		if r >= 'A' && r <= 'Z' {
-			if i > 0 {
+			if i > 0 && !lastWasDash {
 				result = append(result, '-')
 			}
 			result = append(result, r+32) // Convert to lowercase
+			lastWasDash = false
 		} else if r == ' ' || r == '_' {
-			result = append(result, '-')
+			if !lastWasDash {
+				result = append(result, '-')
+				lastWasDash = true
+			}
 		} else {
 			result = append(result, r)
+			lastWasDash = false
 		}
 	}
 	return string(result)

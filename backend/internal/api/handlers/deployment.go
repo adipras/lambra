@@ -85,3 +85,21 @@ func (h *DeploymentHandler) GetServiceStatus(c *gin.Context) {
 
 	response.Success(c, result, "Service status retrieved successfully")
 }
+
+// RedeployService redeploys a service (down + up for cache clearing)
+// POST /api/v1/projects/:id/redeploy
+func (h *DeploymentHandler) RedeployService(c *gin.Context) {
+	projectID := c.Param("id")
+	if projectID == "" {
+		response.BadRequest(c, "Invalid project ID", nil)
+		return
+	}
+
+	result, err := h.service.RedeployService(c.Request.Context(), projectID)
+	if err != nil {
+		response.InternalError(c, "Failed to redeploy service", err)
+		return
+	}
+
+	response.Success(c, result, "Service redeployed successfully")
+}
