@@ -46,7 +46,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
-	"github.com/yourusername/lambra/internal/models"
+	"{{ .ModuleName }}/models"
 )
 
 // {{ .EntityName }}Repository handles {{ toLower .EntityName }} data operations
@@ -216,8 +216,8 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/yourusername/lambra/internal/models"
-	"github.com/yourusername/lambra/internal/repository"
+	"{{ .ModuleName }}/models"
+	"{{ .ModuleName }}/repository"
 )
 
 // {{ .EntityName }}Service handles business logic for {{ pluralize (toLower .EntityName) }}
@@ -324,9 +324,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/yourusername/lambra/internal/api/dto"
-	"github.com/yourusername/lambra/internal/models"
-	"github.com/yourusername/lambra/internal/service"
+	"{{ .ModuleName }}/api/dto"
+	"{{ .ModuleName }}/models"
+	"{{ .ModuleName }}/service"
 )
 
 // {{ .EntityName }}Handler handles HTTP requests for {{ pluralize (toLower .EntityName) }}
@@ -458,7 +458,7 @@ const dtoTemplate = `package dto
 
 import (
 	"github.com/google/uuid"
-	"github.com/yourusername/lambra/internal/models"
+	"{{ .ModuleName }}/models"
 	"time"
 )
 

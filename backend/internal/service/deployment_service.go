@@ -329,9 +329,11 @@ networks:
 	dockerfileTmpl := `FROM golang:1.21-alpine AS builder
 WORKDIR /app
 RUN apk add --no-cache git
-COPY go.mod go.sum ./
-RUN go mod download
+COPY go.mod ./
+COPY go.sum* ./
+RUN go mod download || true
 COPY . .
+RUN go mod tidy
 RUN CGO_ENABLED=0 GOOS=linux go build -o main ./cmd/server
 
 FROM alpine:latest

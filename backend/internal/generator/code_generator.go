@@ -29,6 +29,7 @@ type GenerateContext struct {
 	Entity       *models.Entity
 	Fields       []FieldContext
 	PackageName  string
+	ModuleName   string // Module name for the generated service (e.g., "my-service")
 	Imports      []string
 	EntityName   string
 	EntityNameLC string
@@ -138,6 +139,9 @@ func (g *CodeGenerator) GenerateMigration(ctx *GenerateContext) (up string, down
 
 // PrepareContext prepares generation context from entity
 func (g *CodeGenerator) PrepareContext(project *models.Project, entity *models.Entity) (*GenerateContext, error) {
+	// Generate module name from project name (kebab-case)
+	moduleName := toKebabCase(project.Name)
+
 	ctx := &GenerateContext{
 		Project:      project,
 		Entity:       entity,
@@ -145,6 +149,7 @@ func (g *CodeGenerator) PrepareContext(project *models.Project, entity *models.E
 		EntityNameLC: toCamelCase(entity.Name),
 		TableName:    entity.TableName,
 		PackageName:  "models",
+		ModuleName:   moduleName,
 		HasUUID:      true,
 		HasTimestamp: true,
 	}

@@ -3,8 +3,8 @@ FROM golang:1.21-alpine
 
 WORKDIR /app
 
-# Install build dependencies first
-RUN apk add --no-cache git ca-certificates
+# Install build dependencies and Docker CLI
+RUN apk add --no-cache git ca-certificates docker-cli docker-cli-compose
 
 # Set Go environment for better network handling
 ENV GOPROXY=https://proxy.golang.org,direct
