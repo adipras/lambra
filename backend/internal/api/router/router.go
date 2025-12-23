@@ -35,14 +35,16 @@ func Setup(db *sqlx.DB) *gin.Engine {
 	endpointService := service.NewEndpointService(endpointRepo, entityRepo, projectRepo)
 	generatorService := service.NewGeneratorService(projectRepo, entityRepo, endpointRepo)
 	deploymentService := service.NewDeploymentService(projectRepo, entityRepo, endpointRepo, generatorService, workspacePath)
+	exportService := service.NewExportService(projectRepo, entityRepo, endpointRepo)
 
 	// Initialize handlers
 	healthHandler := handlers.NewHealthHandler(db)
 	projectHandler := handlers.NewProjectHandler(projectService)
 	entityHandler := handlers.NewEntityHandler(entityService)
-	endpointHandler := handlers.NewEndpointHandler(endpointService)
+	endpointHandler := handlers.NewEndpointHandler(endpointService, deploymentService)
 	generatorHandler := handlers.NewGeneratorHandler(generatorService)
 	deploymentHandler := handlers.NewDeploymentHandler(deploymentService)
+	exportHandler := handlers.NewExportHandler(exportService)
 
 	// Health check routes
 	router.GET("/health", healthHandler.HealthCheck)
@@ -70,6 +72,10 @@ func Setup(db *sqlx.DB) *gin.Engine {
 			projects.POST("/:id/start", deploymentHandler.StartService)
 			projects.POST("/:id/stop", deploymentHandler.StopService)
 			projects.GET("/:id/status", deploymentHandler.GetServiceStatus)
+
+			// Export routes
+			projects.GET("/:id/export/openapi", exportHandler.ExportOpenAPI)
+			projects.GET("/:id/export/postman", exportHandler.ExportPostman)
 		}
 
 		// Entities
@@ -88,6 +94,7 @@ func Setup(db *sqlx.DB) *gin.Engine {
 			endpoints.GET("/:id", endpointHandler.GetEndpoint)
 			endpoints.PUT("/:id", endpointHandler.UpdateEndpoint)
 			endpoints.DELETE("/:id", endpointHandler.DeleteEndpoint)
+			endpoints.POST("/:id/test", endpointHandler.TestEndpoint)
 		}
 
 		// Code Generation

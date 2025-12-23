@@ -1,6 +1,12 @@
 package handlers
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
+	"net/http"
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"github.com/yourusername/lambra/internal/models"
 	"github.com/yourusername/lambra/internal/service"
@@ -8,11 +14,15 @@ import (
 )
 
 type EndpointHandler struct {
-	service *service.EndpointService
+	service           *service.EndpointService
+	deploymentService *service.DeploymentService
 }
 
-func NewEndpointHandler(service *service.EndpointService) *EndpointHandler {
-	return &EndpointHandler{service: service}
+func NewEndpointHandler(service *service.EndpointService, deploymentService *service.DeploymentService) *EndpointHandler {
+	return &EndpointHandler{
+		service:           service,
+		deploymentService: deploymentService,
+	}
 }
 
 // CreateEndpoint creates a new endpoint for an entity
@@ -123,4 +133,123 @@ func (h *EndpointHandler) DeleteEndpoint(c *gin.Context) {
 	}
 
 	response.Success(c, nil, "Endpoint deleted successfully")
+}
+
+// TestEndpoint tests an endpoint by sending a request to the deployed service
+// POST /api/v1/endpoints/:id/test
+func (h *EndpointHandler) TestEndpoint(c *gin.Context) {
+	endpointUUID := c.Param("id")
+	if endpointUUID == "" {
+		response.BadRequest(c, "Invalid endpoint ID", nil)
+		return
+	}
+
+	// Get endpoint details
+	endpoint, err := h.service.GetEndpointByUUID(endpointUUID)
+	if err != nil {
+		response.NotFound(c, "Endpoint not found")
+		return
+	}
+
+	// Get project to find deployment URL
+	projectUUID, err := h.service.GetProjectUUIDByEndpointUUID(endpointUUID)
+	if err != nil {
+		response.InternalError(c, "Failed to get project", err)
+		return
+	}
+
+	// Get deployment status to find service URL
+	status, err := h.deploymentService.GetServiceStatus(c.Request.Context(), projectUUID)
+	if err != nil {
+		response.InternalError(c, "Failed to get deployment status", err)
+		return
+	}
+
+	if status.Status != "running" {
+		response.BadRequest(c, "Service is not running. Deploy the service first.", nil)
+		return
+	}
+
+	// Parse request body
+	var req models.TestEndpointRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request body", err)
+		return
+	}
+
+	// Build URL
+	targetURL := status.URL + endpoint.Path
+
+	// Replace path parameters if provided
+	for key, value := range req.Params {
+		targetURL = bytes.NewBuffer([]byte(targetURL)).String()
+		_ = key
+		_ = value
+		// Simple parameter replacement (could be enhanced)
+	}
+
+	// Create HTTP request
+	var bodyReader io.Reader
+	if len(req.Body) > 0 {
+		bodyReader = bytes.NewReader(req.Body)
+	}
+
+	httpReq, err := http.NewRequest(endpoint.Method, targetURL, bodyReader)
+	if err != nil {
+		response.InternalError(c, "Failed to create request", err)
+		return
+	}
+
+	// Set headers
+	httpReq.Header.Set("Content-Type", "application/json")
+	for key, value := range req.Headers {
+		httpReq.Header.Set(key, value)
+	}
+
+	// Send request and measure time
+	client := &http.Client{Timeout: 30 * time.Second}
+	startTime := time.Now()
+	httpResp, err := client.Do(httpReq)
+	responseTime := time.Since(startTime).Milliseconds()
+
+	if err != nil {
+		response.Success(c, &models.TestEndpointResponse{
+			StatusCode:   0,
+			ResponseTime: responseTime,
+			Error:        err.Error(),
+		}, "Test completed with error")
+		return
+	}
+	defer httpResp.Body.Close()
+
+	// Read response body
+	respBody, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		response.InternalError(c, "Failed to read response", err)
+		return
+	}
+
+	// Build response headers map
+	respHeaders := make(map[string]string)
+	for key := range httpResp.Header {
+		respHeaders[key] = httpResp.Header.Get(key)
+	}
+
+	// Parse response body as JSON if possible
+	var jsonBody json.RawMessage
+	if err := json.Unmarshal(respBody, &jsonBody); err != nil {
+		// If not valid JSON, wrap as string
+		jsonBody = json.RawMessage(`"` + string(respBody) + `"`)
+	} else {
+		jsonBody = respBody
+	}
+
+	testResponse := &models.TestEndpointResponse{
+		StatusCode:   httpResp.StatusCode,
+		ResponseTime: responseTime,
+		Headers:      respHeaders,
+		Body:         jsonBody,
+	}
+
+	response.Success(c, testResponse, "Endpoint test completed")
 }

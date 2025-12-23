@@ -1,17 +1,19 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, Code, Play, Eye, X, FileCode, Check, AlertCircle, Square, Rocket, ExternalLink, RefreshCw } from 'lucide-react'
+import { useParams, useNavigate, Link } from 'react-router-dom'
+import { ArrowLeft, Plus, Trash2, Code, Play, Eye, X, FileCode, Check, AlertCircle, Square, Rocket, ExternalLink, RefreshCw, ChevronRight, Download, FileJson, ChevronDown } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi } from '../api/projects'
 import { entitiesApi } from '../api/entities'
 import { endpointsApi } from '../api/endpoints'
 import { generatorApi } from '../api/generator'
 import { deploymentApi } from '../api/deployment'
+import { exportApi } from '../api/export'
 import { LoadingSpinner } from '../components/shared/LoadingSpinner'
 import { ErrorAlert } from '../components/shared/ErrorAlert'
 import { StatusBadge } from '../components/shared/StatusBadge'
 import { EntityForm } from '../components/forms/EntityForm'
 import { EndpointForm } from '../components/forms/EndpointForm'
+import { CodeEditor } from '../components/code/CodeEditor'
 
 export const ServiceDetail = () => {
   const { id } = useParams()
@@ -163,6 +165,35 @@ export const ServiceDetail = () => {
   const isStarting = startMutation.isPending
   const isStopping = stopMutation.isPending
 
+  const [showExportMenu, setShowExportMenu] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
+
+  const handleExportOpenAPI = async () => {
+    setIsExporting(true)
+    try {
+      await exportApi.downloadOpenAPI(id)
+      showNotification('success', 'OpenAPI specification downloaded!')
+    } catch (error) {
+      showNotification('error', 'Failed to export OpenAPI specification')
+    } finally {
+      setIsExporting(false)
+      setShowExportMenu(false)
+    }
+  }
+
+  const handleExportPostman = async () => {
+    setIsExporting(true)
+    try {
+      await exportApi.downloadPostman(id)
+      showNotification('success', 'Postman collection downloaded!')
+    } catch (error) {
+      showNotification('error', 'Failed to export Postman collection')
+    } finally {
+      setIsExporting(false)
+      setShowExportMenu(false)
+    }
+  }
+
   if (projectLoading) {
     return <LoadingSpinner size="lg" className="mt-20" />
   }
@@ -309,6 +340,41 @@ export const ServiceDetail = () => {
           >
             <RefreshCw className="w-4 h-4" />
           </button>
+
+          {/* Export Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              disabled={isExporting || entities.length === 0}
+              className="btn btn-secondary flex items-center gap-2"
+            >
+              {isExporting ? (
+                <LoadingSpinner size="sm" />
+              ) : (
+                <Download className="w-4 h-4" />
+              )}
+              Export
+              <ChevronDown className="w-4 h-4" />
+            </button>
+            {showExportMenu && (
+              <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10">
+                <button
+                  onClick={handleExportOpenAPI}
+                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                >
+                  <FileJson className="w-4 h-4 text-blue-600" />
+                  OpenAPI Spec
+                </button>
+                <button
+                  onClick={handleExportPostman}
+                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                >
+                  <FileJson className="w-4 h-4 text-orange-600" />
+                  Postman Collection
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -524,9 +590,12 @@ const EntityCard = ({ entity, onAddEndpoint, onDelete, onDeleteEndpoint, onPrevi
             {endpoints.map((endpoint) => (
               <div
                 key={endpoint.id}
-                className="flex items-center justify-between bg-gray-50 rounded p-2"
+                className="flex items-center justify-between bg-gray-50 rounded p-2 group hover:bg-gray-100 transition-colors"
               >
-                <div className="flex items-center gap-2">
+                <Link
+                  to={`/endpoints/${endpoint.id}`}
+                  className="flex items-center gap-2 flex-1"
+                >
                   <span
                     className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${getMethodBadgeColor(endpoint.method)}`}
                   >
@@ -538,10 +607,14 @@ const EntityCard = ({ entity, onAddEndpoint, onDelete, onDeleteEndpoint, onPrevi
                   <span className="text-xs text-gray-500">
                     {endpoint.path}
                   </span>
-                </div>
+                  <ChevronRight className="w-4 h-4 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity ml-auto" />
+                </Link>
                 <button
-                  onClick={() => onDeleteEndpoint(endpoint.id)}
-                  className="text-red-600 hover:text-red-700"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    onDeleteEndpoint(endpoint.id)
+                  }}
+                  className="text-red-600 hover:text-red-700 ml-2"
                 >
                   <Trash2 className="w-3 h-3" />
                 </button>
@@ -647,13 +720,13 @@ const CodePreviewModal = ({ entity, files, isLoading, onClose, onGenerate, isGen
 
             {/* Code Preview */}
             <div className="flex-1 overflow-hidden flex flex-col">
-              <div className="px-4 py-2 bg-gray-100 border-b">
-                <p className="text-sm font-mono text-gray-600">{files[selectedFile]?.path}</p>
-              </div>
               <div className="flex-1 overflow-auto">
-                <pre className="p-4 text-sm font-mono text-gray-800 whitespace-pre-wrap">
-                  {files[selectedFile]?.content}
-                </pre>
+                <CodeEditor
+                  code={files[selectedFile]?.content || ''}
+                  filename={files[selectedFile]?.path || ''}
+                  showLineNumbers={true}
+                  className="h-full border-0 rounded-none"
+                />
               </div>
             </div>
           </div>

@@ -30,4 +30,13 @@ export const endpointsApi = {
   delete: async (id) => {
     return axios.delete(`/endpoints/${id}`)
   },
+
+  // Test endpoint - sends a request to the deployed service
+  test: async (id, { headers = {}, body = {}, params = {} } = {}) => {
+    return axios.post(`/endpoints/${id}/test`, {
+      headers,
+      body: typeof body === 'string' ? body : JSON.stringify(body),
+      params,
+    })
+  },
 }

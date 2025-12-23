@@ -128,3 +128,18 @@ func (s *EndpointService) DeleteEndpoint(uuid string) error {
 	// Soft delete with deleted_by (in future, get from auth context)
 	return s.repo.DeleteByUUID(uuid, "system")
 }
+
+// GetProjectUUIDByEndpointUUID returns the project UUID for an endpoint
+func (s *EndpointService) GetProjectUUIDByEndpointUUID(endpointUUID string) (string, error) {
+	endpoint, err := s.repo.GetByUUID(endpointUUID)
+	if err != nil {
+		return "", fmt.Errorf("endpoint not found: %w", err)
+	}
+
+	project, err := s.projectRepo.GetByID(endpoint.ProjectID)
+	if err != nil {
+		return "", fmt.Errorf("project not found: %w", err)
+	}
+
+	return project.UUID, nil
+}
