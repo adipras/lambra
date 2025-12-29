@@ -103,3 +103,21 @@ func (h *DeploymentHandler) RedeployService(c *gin.Context) {
 
 	response.Success(c, result, "Service redeployed successfully")
 }
+
+// DestroyService destroys a service completely (stop containers, remove volumes, delete workspace)
+// DELETE /api/v1/projects/:id/destroy
+func (h *DeploymentHandler) DestroyService(c *gin.Context) {
+	projectID := c.Param("id")
+	if projectID == "" {
+		response.BadRequest(c, "Invalid project ID", nil)
+		return
+	}
+
+	err := h.service.DestroyServiceCompletely(c.Request.Context(), projectID)
+	if err != nil {
+		response.InternalError(c, "Failed to destroy service", err)
+		return
+	}
+
+	response.Success(c, nil, "Service destroyed successfully")
+}

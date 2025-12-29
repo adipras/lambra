@@ -32,10 +32,10 @@ export const endpointsApi = {
   },
 
   // Test endpoint - sends a request to the deployed service
-  test: async (id, { headers = {}, body = {}, params = {} } = {}) => {
+  test: async (id, { headers = {}, body = null, params = {} } = {}) => {
     return axios.post(`/endpoints/${id}/test`, {
       headers,
-      body: typeof body === 'string' ? body : JSON.stringify(body),
+      body,
       params,
     })
   },

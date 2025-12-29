@@ -40,6 +40,7 @@ func NewTemplateEngine() *TemplateEngine {
 		"quote":       quote,
 		"backquote":   backquote,
 		"goType":      toGoType,
+		"sqlType":     toSQLType,
 		"jsonTag":     toJSONTag,
 		"dbTag":       toDBTag,
 	}
@@ -234,6 +235,41 @@ func toGoType(dataType string) string {
 		return goType
 	}
 	return "string"
+}
+
+// toSQLType converts a data type string to MySQL SQL type
+func toSQLType(dataType string, length int) string {
+	typeMap := map[string]string{
+		"string":    "VARCHAR",
+		"text":      "TEXT",
+		"int":       "INT",
+		"integer":   "INT",
+		"bigint":    "BIGINT",
+		"float":     "DOUBLE",
+		"decimal":   "DECIMAL(10,2)",
+		"bool":      "BOOLEAN",
+		"boolean":   "BOOLEAN",
+		"date":      "DATE",
+		"datetime":  "DATETIME",
+		"timestamp": "TIMESTAMP",
+		"json":      "JSON",
+		"uuid":      "CHAR(36)",
+	}
+
+	sqlType, ok := typeMap[strings.ToLower(dataType)]
+	if !ok {
+		sqlType = "VARCHAR"
+	}
+
+	// Add length for VARCHAR
+	if sqlType == "VARCHAR" {
+		if length <= 0 {
+			length = 255
+		}
+		return fmt.Sprintf("VARCHAR(%d)", length)
+	}
+
+	return sqlType
 }
 
 // toJSONTag creates a JSON struct tag

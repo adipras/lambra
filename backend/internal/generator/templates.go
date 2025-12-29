@@ -32,9 +32,13 @@ func ({{ .EntityNameLC }} *{{ .EntityName }}) TableName() string {
 func ({{ .EntityNameLC }} *{{ .EntityName }}) Validate() error {
 {{- range .Fields }}
 {{- if .Required }}
-	if {{ $.EntityNameLC }}.{{ .Name }} == {{ if eq .GoType "string" }}""{{ else if eq .GoType "int" }}0{{ else if eq .GoType "int64" }}0{{ else }}nil{{ end }} {
+{{- if eq .GoType "bool" }}
+	// bool fields are always valid (false is a valid value)
+{{- else }}
+	if {{ $.EntityNameLC }}.{{ .Name }} == {{ if eq .GoType "string" }}""{{ else if eq .GoType "int" }}0{{ else if eq .GoType "int64" }}0{{ else if eq .GoType "float64" }}0{{ else if eq .GoType "float32" }}0{{ else }}nil{{ end }} {
 		return fmt.Errorf("{{ .NameLC }} is required")
 	}
+{{- end }}
 {{- end }}
 {{- end }}
 	return nil
@@ -85,20 +89,19 @@ func (r *{{ .EntityName }}Repository) Create(ctx context.Context, {{ .EntityName
 			:{{ toSnake .Name }},
 {{- end }}
 			:created_at, :updated_at
-		) RETURNING id
+		)
 	` + "`" + `
 
-	rows, err := r.db.NamedQueryContext(ctx, query, {{ .EntityNameLC }})
+	result, err := r.db.NamedExecContext(ctx, query, {{ .EntityNameLC }})
 	if err != nil {
 		return fmt.Errorf("failed to create {{ toLower .EntityName }}: %w", err)
 	}
-	defer rows.Close()
 
-	if rows.Next() {
-		if err := rows.Scan(&{{ .EntityNameLC }}.ID); err != nil {
-			return fmt.Errorf("failed to scan id: %w", err)
-		}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("failed to get last insert id: %w", err)
 	}
+	{{ .EntityNameLC }}.ID = id
 
 	return nil
 }
@@ -106,7 +109,7 @@ func (r *{{ .EntityName }}Repository) Create(ctx context.Context, {{ .EntityName
 // GetByID retrieves a {{ toLower .EntityName }} by ID
 func (r *{{ .EntityName }}Repository) GetByID(ctx context.Context, id int64) (*models.{{ .EntityName }}, error) {
 	var {{ .EntityNameLC }} models.{{ .EntityName }}
-	query := ` + "`" + `SELECT * FROM {{ .TableName }} WHERE id = $1 AND deleted_at IS NULL` + "`" + `
+	query := ` + "`" + `SELECT * FROM {{ .TableName }} WHERE id = ? AND deleted_at IS NULL` + "`" + `
 
 	if err := r.db.GetContext(ctx, &{{ .EntityNameLC }}, query, id); err != nil {
 		if err == sql.ErrNoRows {
@@ -121,7 +124,7 @@ func (r *{{ .EntityName }}Repository) GetByID(ctx context.Context, id int64) (*m
 // GetByUUID retrieves a {{ toLower .EntityName }} by UUID
 func (r *{{ .EntityName }}Repository) GetByUUID(ctx context.Context, uuid uuid.UUID) (*models.{{ .EntityName }}, error) {
 	var {{ .EntityNameLC }} models.{{ .EntityName }}
-	query := ` + "`" + `SELECT * FROM {{ .TableName }} WHERE uuid = $1 AND deleted_at IS NULL` + "`" + `
+	query := ` + "`" + `SELECT * FROM {{ .TableName }} WHERE uuid = ? AND deleted_at IS NULL` + "`" + `
 
 	if err := r.db.GetContext(ctx, &{{ .EntityNameLC }}, query, uuid); err != nil {
 		if err == sql.ErrNoRows {
@@ -140,7 +143,7 @@ func (r *{{ .EntityName }}Repository) List(ctx context.Context, limit, offset in
 		SELECT * FROM {{ .TableName }}
 		WHERE deleted_at IS NULL
 		ORDER BY created_at DESC
-		LIMIT $1 OFFSET $2
+		LIMIT ? OFFSET ?
 	` + "`" + `
 
 	if err := r.db.SelectContext(ctx, &{{ .EntityNameLC }}s, query, limit, offset); err != nil {
@@ -182,7 +185,7 @@ func (r *{{ .EntityName }}Repository) Update(ctx context.Context, {{ .EntityName
 
 // Delete soft deletes a {{ toLower .EntityName }}
 func (r *{{ .EntityName }}Repository) Delete(ctx context.Context, id int64) error {
-	query := ` + "`" + `UPDATE {{ .TableName }} SET deleted_at = $1 WHERE id = $2 AND deleted_at IS NULL` + "`" + `
+	query := ` + "`" + `UPDATE {{ .TableName }} SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL` + "`" + `
 
 	result, err := r.db.ExecContext(ctx, query, time.Now(), id)
 	if err != nil {
@@ -331,7 +334,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"{{ .ModuleName }}/api/dto"
-	"{{ .ModuleName }}/models"
 	"{{ .ModuleName }}/service"
 )
 
@@ -463,9 +465,10 @@ func (h *{{ .EntityName }}Handler) Delete{{ .EntityName }}(c *gin.Context) {
 const dtoTemplate = `package dto
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 	"{{ .ModuleName }}/models"
-	"time"
 )
 
 // Create{{ .EntityName }}Request represents a request to create a {{ toLower .EntityName }}
@@ -514,6 +517,11 @@ type {{ .EntityName }}Response struct {
 
 // FromModel converts a model to a response
 func (r {{ .EntityName }}Response) FromModel({{ .EntityNameLC }} *models.{{ .EntityName }}) {{ .EntityName }}Response {
+	var deletedAt *time.Time
+	if {{ .EntityNameLC }}.DeletedAt.Valid {
+		deletedAt = &{{ .EntityNameLC }}.DeletedAt.Time
+	}
+
 	return {{ .EntityName }}Response{
 		ID:        {{ .EntityNameLC }}.ID,
 		UUID:      {{ .EntityNameLC }}.UUID,
@@ -522,22 +530,22 @@ func (r {{ .EntityName }}Response) FromModel({{ .EntityNameLC }} *models.{{ .Ent
 {{- end }}
 		CreatedAt: {{ .EntityNameLC }}.CreatedAt,
 		UpdatedAt: {{ .EntityNameLC }}.UpdatedAt,
-		DeletedAt: {{ .EntityNameLC }}.DeletedAt,
+		DeletedAt: deletedAt,
 	}
 }
 `
 
-// Migration up template
+// Migration up template (MySQL)
 const migrationUpTemplate = `-- Create {{ .TableName }} table
 CREATE TABLE IF NOT EXISTS {{ .TableName }} (
-    id BIGSERIAL PRIMARY KEY,
-    uuid UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    uuid CHAR(36) NOT NULL UNIQUE,
 {{- range .Fields }}
-    {{ toSnake .Name }} {{ .Type }}{{ if .Required }} NOT NULL{{ end }}{{ if .DefaultValue }} DEFAULT {{ .DefaultValue }}{{ end }},
+    {{ toSnake .Name }} {{ sqlType .Type .Length }}{{ if .Required }} NOT NULL{{ end }}{{ if .DefaultValue }} DEFAULT {{ .DefaultValue }}{{ end }},
 {{- end }}
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted_at TIMESTAMP
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP NULL DEFAULT NULL
 );
 
 -- Create indexes

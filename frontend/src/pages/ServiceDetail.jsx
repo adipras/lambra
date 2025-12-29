@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, Code, Play, Eye, X, FileCode, Check, AlertCircle, Square, Rocket, ExternalLink, RefreshCw, ChevronRight, Download, FileJson, ChevronDown } from 'lucide-react'
+import {
+  ArrowLeft, Plus, Trash2, Code, Play, Eye, X, FileCode, Check, AlertCircle,
+  Square, Rocket, ExternalLink, RefreshCw, ChevronRight, FileJson,
+  ChevronDown, ChevronUp, Database, Zap, Settings, MoreVertical, Copy, Terminal
+} from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi } from '../api/projects'
 import { entitiesApi } from '../api/entities'
@@ -14,6 +18,9 @@ import { StatusBadge } from '../components/shared/StatusBadge'
 import { EntityForm } from '../components/forms/EntityForm'
 import { EndpointForm } from '../components/forms/EndpointForm'
 import { CodeEditor } from '../components/code/CodeEditor'
+import { ExampleBody } from '../components/shared/ExampleBody'
+import { TestEndpointModal } from '../components/shared/TestEndpointModal'
+import { DeleteServiceModal } from '../components/shared/DeleteServiceModal'
 
 export const ServiceDetail = () => {
   const { id } = useParams()
@@ -45,6 +52,10 @@ export const ServiceDetail = () => {
     onSuccess: () => {
       queryClient.invalidateQueries(['entities', id])
       setShowEntityModal(false)
+      showNotification('success', 'Entity created successfully!')
+    },
+    onError: (error) => {
+      showNotification('error', error.response?.data?.message || 'Failed to create entity')
     },
   })
 
@@ -55,6 +66,7 @@ export const ServiceDetail = () => {
       queryClient.invalidateQueries(['entity-endpoints'])
       setShowEndpointModal(false)
       setSelectedEntity(null)
+      showNotification('success', 'Endpoint created successfully!')
     },
   })
 
@@ -63,6 +75,7 @@ export const ServiceDetail = () => {
     mutationFn: (entityId) => entitiesApi.delete(entityId),
     onSuccess: () => {
       queryClient.invalidateQueries(['entities', id])
+      showNotification('success', 'Entity deleted successfully!')
     },
   })
 
@@ -118,7 +131,6 @@ export const ServiceDetail = () => {
     queryKey: ['deployment-status', id],
     queryFn: () => deploymentApi.getStatus(id),
     refetchInterval: (data) => {
-      // Poll every 5 seconds if service is running
       return data?.data?.status === 'running' ? 5000 : false
     },
   })
@@ -173,13 +185,27 @@ export const ServiceDetail = () => {
     },
   })
 
+  // Destroy mutation
+  const destroyMutation = useMutation({
+    mutationFn: () => deploymentApi.destroy(id),
+    onSuccess: () => {
+      showNotification('success', 'Service destroyed successfully')
+      setShowDeleteModal(false)
+      refetchStatus()
+    },
+    onError: (error) => {
+      showNotification('error', error.response?.data?.message || 'Failed to destroy service')
+    },
+  })
+
   const isDeploying = deployMutation.isPending
   const isStarting = startMutation.isPending
   const isStopping = stopMutation.isPending
   const isRedeploying = redeployMutation.isPending
 
-  const [showExportMenu, setShowExportMenu] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [showActionsMenu, setShowActionsMenu] = useState(false)
 
   const handleExportOpenAPI = async () => {
     setIsExporting(true)
@@ -190,7 +216,6 @@ export const ServiceDetail = () => {
       showNotification('error', 'Failed to export OpenAPI specification')
     } finally {
       setIsExporting(false)
-      setShowExportMenu(false)
     }
   }
 
@@ -203,7 +228,6 @@ export const ServiceDetail = () => {
       showNotification('error', 'Failed to export Postman collection')
     } finally {
       setIsExporting(false)
-      setShowExportMenu(false)
     }
   }
 
@@ -219,7 +243,7 @@ export const ServiceDetail = () => {
   const entities = entitiesData?.data || []
 
   const handleDeleteEntity = (entityId) => {
-    if (window.confirm('Are you sure you want to delete this entity?')) {
+    if (window.confirm('Are you sure you want to delete this entity? All associated endpoints will also be deleted.')) {
       deleteEntityMutation.mutate(entityId)
     }
   }
@@ -234,311 +258,355 @@ export const ServiceDetail = () => {
     <div className="space-y-6">
       {/* Notification */}
       {notification && (
-        <div className={`fixed top-4 right-4 z-50 flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg ${
+        <div className={`fixed top-4 right-4 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg animate-slide-in ${
           notification.type === 'success'
             ? 'bg-green-50 text-green-800 border border-green-200'
             : 'bg-red-50 text-red-800 border border-red-200'
         }`}>
           {notification.type === 'success' ? (
-            <Check className="w-5 h-5" />
+            <Check className="w-5 h-5 text-green-600" />
           ) : (
-            <AlertCircle className="w-5 h-5" />
+            <AlertCircle className="w-5 h-5 text-red-600" />
           )}
-          <span>{notification.message}</span>
-          <button onClick={() => setNotification(null)} className="ml-2">
+          <span className="font-medium">{notification.message}</span>
+          <button onClick={() => setNotification(null)} className="ml-2 hover:opacity-70">
             <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className="flex items-start justify-between">
+        <div className="flex items-start gap-4">
           <button
             onClick={() => navigate('/services')}
-            className="btn btn-secondary"
+            className="btn btn-secondary p-2 mt-1"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">{project?.name}</h1>
-            <p className="text-gray-600 mt-1">{project?.description || 'No description'}</p>
+            <div className="flex items-center gap-3">
+              <h1 className="text-3xl font-bold text-gray-900">{project?.name}</h1>
+              <StatusBadge status={project?.status} />
+            </div>
+            <p className="text-gray-500 mt-1">{project?.description || 'No description'}</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <StatusBadge status={project?.status} />
 
-          {/* Deployment Status & Controls */}
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 rounded-lg">
-            <div className={`w-2 h-2 rounded-full ${
+        {/* Action Buttons - Reorganized */}
+        <div className="flex items-center gap-3">
+          {/* Status Badge */}
+          <div className={`flex items-center gap-2 px-4 py-2 rounded-xl ${
+            deploymentStatus?.status === 'running'
+              ? 'bg-green-50 border border-green-200'
+              : deploymentStatus?.status === 'stopped'
+              ? 'bg-yellow-50 border border-yellow-200'
+              : 'bg-gray-50 border border-gray-200'
+          }`}>
+            <div className={`w-2.5 h-2.5 rounded-full ${
               deploymentStatus?.status === 'running' ? 'bg-green-500 animate-pulse' :
               deploymentStatus?.status === 'stopped' ? 'bg-yellow-500' : 'bg-gray-400'
             }`} />
-            <span className="text-sm font-medium text-gray-700 capitalize">
-              {deploymentStatus?.status || 'not deployed'}
+            <span className="text-sm font-medium capitalize">
+              {deploymentStatus?.status || 'Not Deployed'}
             </span>
             {deploymentStatus?.url && deploymentStatus?.status === 'running' && (
               <a
                 href={deploymentStatus.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-blue-600 hover:text-blue-700"
+                className="text-green-600 hover:text-green-700 ml-1"
+                title="Open in browser"
               >
                 <ExternalLink className="w-4 h-4" />
               </a>
             )}
           </div>
 
-          {/* Action Buttons */}
+          {/* Primary Action Button */}
           {deploymentStatus?.status === 'running' ? (
-            <>
-              <button
-                onClick={() => stopMutation.mutate()}
-                disabled={isStopping || isRedeploying}
-                className="btn bg-red-600 hover:bg-red-700 text-white flex items-center gap-2"
-              >
-                {isStopping ? (
-                  <>
-                    <LoadingSpinner size="sm" />
-                    Stopping...
-                  </>
-                ) : (
-                  <>
-                    <Square className="w-4 h-4" />
-                    Stop
-                  </>
-                )}
-              </button>
-              <button
-                onClick={() => redeployMutation.mutate()}
-                disabled={isRedeploying || isStopping}
-                className="btn bg-orange-600 hover:bg-orange-700 text-white flex items-center gap-2"
-                title="Redeploy (clear cache)"
-              >
-                {isRedeploying ? (
-                  <>
-                    <LoadingSpinner size="sm" />
-                    Redeploying...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="w-4 h-4" />
-                    Redeploy
-                  </>
-                )}
-              </button>
-            </>
+            <button
+              onClick={() => stopMutation.mutate()}
+              disabled={isStopping || isRedeploying}
+              className="btn bg-red-500 hover:bg-red-600 text-white"
+            >
+              {isStopping ? <LoadingSpinner size="sm" /> : <Square className="w-4 h-4 mr-1.5" />}
+              Stop
+            </button>
           ) : deploymentStatus?.status === 'stopped' ? (
-            <>
-              <button
-                onClick={() => startMutation.mutate()}
-                disabled={isStarting || isRedeploying}
-                className="btn bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
-              >
-                {isStarting ? (
-                  <>
-                    <LoadingSpinner size="sm" />
-                    Starting...
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-4 h-4" />
-                    Start
-                  </>
-                )}
-              </button>
-              <button
-                onClick={() => redeployMutation.mutate()}
-                disabled={isRedeploying || isStarting}
-                className="btn bg-orange-600 hover:bg-orange-700 text-white flex items-center gap-2"
-                title="Redeploy (clear cache)"
-              >
-                {isRedeploying ? (
-                  <>
-                    <LoadingSpinner size="sm" />
-                    Redeploying...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="w-4 h-4" />
-                    Redeploy
-                  </>
-                )}
-              </button>
-            </>
+            <button
+              onClick={() => startMutation.mutate()}
+              disabled={isStarting || isRedeploying}
+              className="btn bg-green-500 hover:bg-green-600 text-white"
+            >
+              {isStarting ? <LoadingSpinner size="sm" /> : <Play className="w-4 h-4 mr-1.5" />}
+              Start
+            </button>
           ) : (
             <button
               onClick={() => deployMutation.mutate()}
               disabled={isDeploying || entities.length === 0}
-              className="btn bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-2"
+              className="btn bg-indigo-600 hover:bg-indigo-700 text-white"
+              title={entities.length === 0 ? 'Add at least one entity first' : ''}
             >
-              {isDeploying ? (
-                <>
-                  <LoadingSpinner size="sm" />
-                  Deploying...
-                </>
-              ) : (
-                <>
-                  <Rocket className="w-4 h-4" />
-                  Deploy
-                </>
-              )}
+              {isDeploying ? <LoadingSpinner size="sm" /> : <Rocket className="w-4 h-4 mr-1.5" />}
+              Deploy
             </button>
           )}
 
-          <button
-            onClick={() => refetchStatus()}
-            className="btn btn-secondary p-2"
-            title="Refresh Status"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
-
-          {/* Export Dropdown */}
+          {/* Actions Dropdown Menu */}
           <div className="relative">
             <button
-              onClick={() => setShowExportMenu(!showExportMenu)}
-              disabled={isExporting || entities.length === 0}
-              className="btn btn-secondary flex items-center gap-2"
+              onClick={() => setShowActionsMenu(!showActionsMenu)}
+              className="btn btn-secondary"
             >
-              {isExporting ? (
-                <LoadingSpinner size="sm" />
-              ) : (
-                <Download className="w-4 h-4" />
-              )}
-              Export
-              <ChevronDown className="w-4 h-4" />
+              <MoreVertical className="w-4 h-4" />
             </button>
-            {showExportMenu && (
-              <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10">
-                <button
-                  onClick={handleExportOpenAPI}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
-                >
-                  <FileJson className="w-4 h-4 text-blue-600" />
-                  OpenAPI Spec
-                </button>
-                <button
-                  onClick={handleExportPostman}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
-                >
-                  <FileJson className="w-4 h-4 text-orange-600" />
-                  Postman Collection
-                </button>
-              </div>
+            {showActionsMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-10"
+                  onClick={() => setShowActionsMenu(false)}
+                />
+                <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-gray-200 py-2 z-20">
+                  {/* Refresh Status */}
+                  <button
+                    onClick={() => { refetchStatus(); setShowActionsMenu(false) }}
+                    className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50 flex items-center gap-3"
+                  >
+                    <RefreshCw className="w-4 h-4 text-gray-500" />
+                    <span>Refresh Status</span>
+                  </button>
+
+                  {/* Redeploy - only show if deployed */}
+                  {(deploymentStatus?.status === 'running' || deploymentStatus?.status === 'stopped') && (
+                    <button
+                      onClick={() => { redeployMutation.mutate(); setShowActionsMenu(false) }}
+                      disabled={isRedeploying}
+                      className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50 flex items-center gap-3"
+                    >
+                      {isRedeploying ? (
+                        <LoadingSpinner size="sm" />
+                      ) : (
+                        <RefreshCw className="w-4 h-4 text-orange-500" />
+                      )}
+                      <span>Redeploy Service</span>
+                    </button>
+                  )}
+
+                  <div className="border-t border-gray-100 my-2" />
+
+                  {/* Export Options */}
+                  <button
+                    onClick={() => { handleExportOpenAPI(); setShowActionsMenu(false) }}
+                    disabled={isExporting || entities.length === 0}
+                    className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50 flex items-center gap-3 disabled:opacity-50"
+                  >
+                    <FileJson className="w-4 h-4 text-blue-600" />
+                    <div>
+                      <div className="font-medium">Export OpenAPI</div>
+                      <div className="text-xs text-gray-500">Swagger/OpenAPI 3.0</div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => { handleExportPostman(); setShowActionsMenu(false) }}
+                    disabled={isExporting || entities.length === 0}
+                    className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50 flex items-center gap-3 disabled:opacity-50"
+                  >
+                    <FileJson className="w-4 h-4 text-orange-600" />
+                    <div>
+                      <div className="font-medium">Export Postman</div>
+                      <div className="text-xs text-gray-500">Postman Collection</div>
+                    </div>
+                  </button>
+
+                  {/* Delete - only show if service was deployed */}
+                  {(deploymentStatus?.status === 'running' || deploymentStatus?.status === 'stopped') && (
+                    <>
+                      <div className="border-t border-gray-100 my-2" />
+                      <button
+                        onClick={() => { setShowDeleteModal(true); setShowActionsMenu(false) }}
+                        className="w-full px-4 py-2.5 text-left text-sm hover:bg-red-50 flex items-center gap-3 text-red-600"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        <div>
+                          <div className="font-medium">Delete Service</div>
+                          <div className="text-xs text-red-400">Remove containers & files</div>
+                        </div>
+                      </button>
+                    </>
+                  )}
+                </div>
+              </>
             )}
           </div>
         </div>
       </div>
 
-      {/* Project Info */}
-      <div className="card grid grid-cols-4 gap-6">
-        <div>
-          <p className="text-sm text-gray-600">Namespace</p>
-          <p className="font-medium text-gray-900">{project?.namespace}</p>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-indigo-100 rounded-lg">
+              <Database className="w-5 h-5 text-indigo-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-gray-900">{entities.length}</p>
+              <p className="text-sm text-gray-500">Entities</p>
+            </div>
+          </div>
         </div>
-        <div>
-          <p className="text-sm text-gray-600">Entities</p>
-          <p className="font-medium text-gray-900">{entities.length}</p>
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-green-100 rounded-lg">
+              <Zap className="w-5 h-5 text-green-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-gray-900">
+                {entities.reduce((acc, e) => acc + (e.endpoints_count || 0), 0) || '-'}
+              </p>
+              <p className="text-sm text-gray-500">Endpoints</p>
+            </div>
+          </div>
         </div>
-        <div>
-          <p className="text-sm text-gray-600">Created</p>
-          <p className="font-medium text-gray-900">
-            {new Date(project?.created_at).toLocaleDateString()}
-          </p>
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-purple-100 rounded-lg">
+              <Terminal className="w-5 h-5 text-purple-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-gray-900 font-mono text-lg">
+                {deploymentStatus?.port || '-'}
+              </p>
+              <p className="text-sm text-gray-500">Port</p>
+            </div>
+          </div>
         </div>
-        <div>
-          <p className="text-sm text-gray-600">Service URL</p>
-          {deploymentStatus?.url && deploymentStatus?.status === 'running' ? (
-            <a
-              href={deploymentStatus.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1"
-            >
-              {deploymentStatus.url}
-              <ExternalLink className="w-3 h-3" />
-            </a>
-          ) : (
-            <p className="font-medium text-gray-400">Not running</p>
-          )}
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-orange-100 rounded-lg">
+              <Settings className="w-5 h-5 text-orange-600" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-900 truncate max-w-[150px]" title={project?.namespace}>
+                {project?.namespace}
+              </p>
+              <p className="text-sm text-gray-500">Namespace</p>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Entities Section */}
-      <div className="card">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold text-gray-900">Entities</h2>
+      <div className="bg-white rounded-xl border border-gray-200">
+        <div className="flex items-center justify-between p-5 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-indigo-100 rounded-lg">
+              <Database className="w-5 h-5 text-indigo-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Entities & Endpoints</h2>
+              <p className="text-sm text-gray-500">Define your data models and API endpoints</p>
+            </div>
+          </div>
           <button
             onClick={() => setShowEntityModal(true)}
             className="btn btn-primary"
           >
-            <Plus className="w-4 h-4 mr-1" />
+            <Plus className="w-4 h-4 mr-1.5" />
             Add Entity
           </button>
         </div>
 
-        {entitiesLoading ? (
-          <LoadingSpinner />
-        ) : entities.length === 0 ? (
-          <div className="text-center py-12">
-            <Code className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-600">No entities yet</p>
-            <button
-              onClick={() => setShowEntityModal(true)}
-              className="btn btn-primary mt-4"
-            >
-              Create your first entity
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {entities.map((entity) => (
-              <EntityCard
-                key={entity.id}
-                entity={entity}
-                onAddEndpoint={() => {
-                  setSelectedEntity(entity)
-                  setShowEndpointModal(true)
-                }}
-                onDelete={() => handleDeleteEntity(entity.id)}
-                onDeleteEndpoint={handleDeleteEndpoint}
-                onPreview={() => handlePreview(entity)}
-              />
-            ))}
-          </div>
-        )}
+        <div className="p-5">
+          {entitiesLoading ? (
+            <div className="flex justify-center py-12">
+              <LoadingSpinner size="lg" />
+            </div>
+          ) : entities.length === 0 ? (
+            <div className="text-center py-16">
+              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Database className="w-8 h-8 text-gray-400" />
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 mb-1">No entities yet</h3>
+              <p className="text-gray-500 mb-6">Create your first entity to define your data model</p>
+              <button
+                onClick={() => setShowEntityModal(true)}
+                className="btn btn-primary"
+              >
+                <Plus className="w-4 h-4 mr-1.5" />
+                Create First Entity
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {entities.map((entity) => (
+                <EntityCard
+                  key={entity.id}
+                  entity={entity}
+                  serviceUrl={deploymentStatus?.url}
+                  onAddEndpoint={() => {
+                    setSelectedEntity(entity)
+                    setShowEndpointModal(true)
+                  }}
+                  onDelete={() => handleDeleteEntity(entity.id)}
+                  onDeleteEndpoint={handleDeleteEndpoint}
+                  onPreview={() => handlePreview(entity)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Entity Modal */}
       {showEntityModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">Create Entity</h2>
-            <EntityForm
-              onSubmit={(data) => createEntityMutation.mutate(data)}
-              onCancel={() => setShowEntityModal(false)}
-              isLoading={createEntityMutation.isPending}
-            />
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Create New Entity</h2>
+                <p className="text-sm text-gray-500">Define your data model with fields and auto-generated endpoints</p>
+              </div>
+              <button onClick={() => setShowEntityModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6">
+              <EntityForm
+                onSubmit={(data) => createEntityMutation.mutate(data)}
+                onCancel={() => setShowEntityModal(false)}
+                isLoading={createEntityMutation.isPending}
+              />
+            </div>
           </div>
         </div>
       )}
 
       {/* Endpoint Modal */}
       {showEndpointModal && selectedEntity && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Create Endpoint</h2>
-            <p className="text-gray-600 mb-6">for entity: {selectedEntity.name}</p>
-            <EndpointForm
-              entityId={selectedEntity.id}
-              onSubmit={(data) => createEndpointMutation.mutate(data)}
-              onCancel={() => {
-                setShowEndpointModal(false)
-                setSelectedEntity(null)
-              }}
-              isLoading={createEndpointMutation.isPending}
-            />
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Create Endpoint</h2>
+                <p className="text-sm text-gray-500">for entity: <span className="font-medium text-indigo-600">{selectedEntity.name}</span></p>
+              </div>
+              <button onClick={() => { setShowEndpointModal(false); setSelectedEntity(null) }} className="p-2 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6">
+              <EndpointForm
+                entityId={selectedEntity.id}
+                onSubmit={(data) => createEndpointMutation.mutate(data)}
+                onCancel={() => {
+                  setShowEndpointModal(false)
+                  setSelectedEntity(null)
+                }}
+                isLoading={createEndpointMutation.isPending}
+              />
+            </div>
           </div>
         </div>
       )}
@@ -561,12 +629,26 @@ export const ServiceDetail = () => {
           isGenerating={generateEntityMutation.isPending}
         />
       )}
+
+      {/* Delete Service Modal */}
+      {showDeleteModal && (
+        <DeleteServiceModal
+          serviceName={project?.name || 'Unknown Service'}
+          onConfirm={() => destroyMutation.mutate()}
+          onCancel={() => setShowDeleteModal(false)}
+          isDeleting={destroyMutation.isPending}
+        />
+      )}
     </div>
   )
 }
 
-// EntityCard component
-const EntityCard = ({ entity, onAddEndpoint, onDelete, onDeleteEndpoint, onPreview }) => {
+// EntityCard component with improved UI
+const EntityCard = ({ entity, onAddEndpoint, onDelete, onDeleteEndpoint, onPreview, serviceUrl }) => {
+  const [isExpanded, setIsExpanded] = useState(true)
+  const [selectedEndpoint, setSelectedEndpoint] = useState(null)
+  const [testEndpoint, setTestEndpoint] = useState(null)
+
   const { data: endpointsData } = useQuery({
     queryKey: ['entity-endpoints', entity.id],
     queryFn: () => endpointsApi.getByEntity(entity.id),
@@ -574,109 +656,180 @@ const EntityCard = ({ entity, onAddEndpoint, onDelete, onDeleteEndpoint, onPrevi
 
   const endpoints = endpointsData?.data || []
 
-  const getMethodBadgeColor = (method) => {
-    const colors = {
-      GET: 'bg-blue-100 text-blue-800 border-blue-200',
-      POST: 'bg-green-100 text-green-800 border-green-200',
-      PUT: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-      DELETE: 'bg-red-100 text-red-800 border-red-200',
-      PATCH: 'bg-purple-100 text-purple-800 border-purple-200',
+  const getMethodBadge = (method) => {
+    const styles = {
+      GET: 'bg-blue-500 text-white',
+      POST: 'bg-green-500 text-white',
+      PUT: 'bg-yellow-500 text-white',
+      DELETE: 'bg-red-500 text-white',
+      PATCH: 'bg-purple-500 text-white',
     }
-    return colors[method] || 'bg-gray-100 text-gray-800 border-gray-200'
+    return styles[method] || 'bg-gray-500 text-white'
+  }
+
+  const copyEndpointUrl = (endpoint) => {
+    const baseUrl = serviceUrl || 'http://localhost:9850'
+    navigator.clipboard.writeText(`${baseUrl}${endpoint.path}`)
   }
 
   return (
-    <div className="border border-gray-200 rounded-lg p-4">
-      <div className="flex items-start justify-between mb-3">
-        <div>
-          <h3 className="font-semibold text-gray-900">{entity.name}</h3>
-          <p className="text-sm text-gray-600">Table: {entity.table_name}</p>
-          {entity.description && (
-            <p className="text-sm text-gray-500 mt-1">{entity.description}</p>
-          )}
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={onPreview}
-            className="text-indigo-600 hover:text-indigo-700"
-            title="Preview Generated Code"
-          >
-            <Eye className="w-4 h-4" />
-          </button>
-          <button
-            onClick={onAddEndpoint}
-            className="text-blue-600 hover:text-blue-700"
-            title="Add Endpoint"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
-          <button
-            onClick={onDelete}
-            className="text-red-600 hover:text-red-700"
-            title="Delete Entity"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Fields */}
-      <div className="mb-3">
-        <p className="text-xs font-medium text-gray-600 mb-2">Fields:</p>
-        <div className="flex flex-wrap gap-2">
-          {entity.fields?.map((field, idx) => (
-            <span
-              key={idx}
-              className="inline-flex items-center px-2 py-1 rounded text-xs bg-gray-100 text-gray-700"
-            >
-              {field.name} <span className="text-gray-500 ml-1">({field.type})</span>
-            </span>
-          ))}
-        </div>
-      </div>
-
-      {/* Endpoints */}
-      {endpoints.length > 0 && (
-        <div>
-          <p className="text-xs font-medium text-gray-600 mb-2">Endpoints:</p>
-          <div className="space-y-2">
-            {endpoints.map((endpoint) => (
-              <div
-                key={endpoint.id}
-                className="flex items-center justify-between bg-gray-50 rounded p-2 group hover:bg-gray-100 transition-colors"
-              >
-                <Link
-                  to={`/endpoints/${endpoint.id}`}
-                  className="flex items-center gap-2 flex-1"
-                >
-                  <span
-                    className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${getMethodBadgeColor(endpoint.method)}`}
-                  >
-                    {endpoint.method}
-                  </span>
-                  <span className="text-sm font-medium text-gray-900">
-                    {endpoint.name}
-                  </span>
-                  <span className="text-xs text-gray-500">
-                    {endpoint.path}
-                  </span>
-                  <ChevronRight className="w-4 h-4 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity ml-auto" />
-                </Link>
-                <button
-                  onClick={(e) => {
-                    e.preventDefault()
-                    onDeleteEndpoint(endpoint.id)
-                  }}
-                  className="text-red-600 hover:text-red-700 ml-2"
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
+    <>
+      <div className="border border-gray-200 rounded-xl overflow-hidden hover:border-gray-300 transition-colors">
+        {/* Entity Header */}
+        <div
+          className="flex items-center justify-between p-4 bg-gray-50 cursor-pointer"
+          onClick={() => setIsExpanded(!isExpanded)}
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-white rounded-lg border border-gray-200">
+              <Database className="w-4 h-4 text-indigo-600" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold text-gray-900">{entity.name}</h3>
+                <span className="text-xs px-2 py-0.5 bg-gray-200 text-gray-600 rounded-full">
+                  {endpoints.length} endpoints
+                </span>
               </div>
-            ))}
+              <p className="text-sm text-gray-500">
+                Table: <span className="font-mono text-xs">{entity.table_name}</span>
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={(e) => { e.stopPropagation(); onPreview() }}
+              className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+              title="Preview Code"
+            >
+              <Eye className="w-4 h-4" />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onAddEndpoint() }}
+              className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+              title="Add Endpoint"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete() }}
+              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+              title="Delete Entity"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+            {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
           </div>
         </div>
+
+        {/* Expanded Content */}
+        {isExpanded && (
+          <div className="p-4 space-y-4">
+            {/* Fields */}
+            <div>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Fields</p>
+              <div className="flex flex-wrap gap-2">
+                {entity.fields?.map((field, idx) => (
+                  <div
+                    key={idx}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-gray-100 rounded-lg"
+                  >
+                    <span className="font-mono text-sm text-gray-700">{field.name}</span>
+                    <span className="text-xs text-gray-400">({field.type})</span>
+                    {field.required && <span className="w-1 h-1 bg-red-500 rounded-full" title="Required" />}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Endpoints */}
+            {endpoints.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Endpoints</p>
+                <div className="space-y-2">
+                  {endpoints.map((endpoint) => (
+                    <div key={endpoint.id}>
+                      <div
+                        className={`flex items-center justify-between p-3 rounded-lg border transition-all cursor-pointer ${
+                          selectedEndpoint?.id === endpoint.id
+                            ? 'border-indigo-300 bg-indigo-50'
+                            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                        }`}
+                        onClick={() => setSelectedEndpoint(selectedEndpoint?.id === endpoint.id ? null : endpoint)}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className={`px-2.5 py-1 text-xs font-bold rounded ${getMethodBadge(endpoint.method)}`}>
+                            {endpoint.method}
+                          </span>
+                          <div>
+                            <p className="font-medium text-gray-900">{endpoint.name}</p>
+                            <p className="text-xs font-mono text-gray-500">{endpoint.path}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {/* Test Button */}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setTestEndpoint(endpoint) }}
+                            className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-green-700 bg-green-100 hover:bg-green-200 rounded-lg transition-colors"
+                            title="Test Endpoint"
+                          >
+                            <Play className="w-3.5 h-3.5" />
+                            Test
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); copyEndpointUrl(endpoint) }}
+                            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded"
+                            title="Copy URL"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onDeleteEndpoint(endpoint.id) }}
+                            className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                          {selectedEndpoint?.id === endpoint.id ? (
+                            <ChevronUp className="w-4 h-4 text-gray-400" />
+                          ) : (
+                            <ChevronDown className="w-4 h-4 text-gray-400" />
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Example Body Preview */}
+                      {selectedEndpoint?.id === endpoint.id && (
+                        <div className="mt-2 grid grid-cols-2 gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                          <ExampleBody
+                            schema={endpoint.request_schema}
+                            title="Example Request"
+                            type="request"
+                          />
+                          <ExampleBody
+                            schema={endpoint.response_schema}
+                            title="Example Response"
+                            type="response"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Test Endpoint Modal */}
+      {testEndpoint && (
+        <TestEndpointModal
+          endpoint={testEndpoint}
+          serviceUrl={serviceUrl}
+          onClose={() => setTestEndpoint(null)}
+        />
       )}
-    </div>
+    </>
   )
 }
 
@@ -686,30 +839,30 @@ const CodePreviewModal = ({ entity, files, isLoading, onClose, onGenerate, isGen
 
   const getLayerColor = (layer) => {
     const colors = {
-      model: 'bg-blue-100 text-blue-800',
-      repository: 'bg-green-100 text-green-800',
-      service: 'bg-purple-100 text-purple-800',
-      handler: 'bg-orange-100 text-orange-800',
-      dto: 'bg-pink-100 text-pink-800',
-      migration: 'bg-yellow-100 text-yellow-800',
+      model: 'bg-blue-100 text-blue-700',
+      repository: 'bg-green-100 text-green-700',
+      service: 'bg-purple-100 text-purple-700',
+      handler: 'bg-orange-100 text-orange-700',
+      dto: 'bg-pink-100 text-pink-700',
+      migration: 'bg-yellow-100 text-yellow-700',
     }
-    return colors[layer] || 'bg-gray-100 text-gray-800'
+    return colors[layer] || 'bg-gray-100 text-gray-700'
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg w-full max-w-6xl max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-2xl w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <div>
             <h2 className="text-xl font-bold text-gray-900">Generated Code Preview</h2>
-            <p className="text-sm text-gray-600">Entity: {entity.name}</p>
+            <p className="text-sm text-gray-500">Entity: <span className="font-medium text-indigo-600">{entity.name}</span></p>
           </div>
           <div className="flex items-center gap-3">
             <button
               onClick={onGenerate}
               disabled={isGenerating || isLoading}
-              className="btn btn-primary flex items-center gap-2"
+              className="btn btn-primary"
             >
               {isGenerating ? (
                 <>
@@ -718,13 +871,13 @@ const CodePreviewModal = ({ entity, files, isLoading, onClose, onGenerate, isGen
                 </>
               ) : (
                 <>
-                  <Play className="w-4 h-4" />
+                  <Play className="w-4 h-4 mr-1.5" />
                   Generate Files
                 </>
               )}
             </button>
-            <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
-              <X className="w-6 h-6" />
+            <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
+              <X className="w-5 h-5" />
             </button>
           </div>
         </div>
@@ -735,44 +888,59 @@ const CodePreviewModal = ({ entity, files, isLoading, onClose, onGenerate, isGen
           </div>
         ) : files.length === 0 ? (
           <div className="flex-1 flex items-center justify-center text-gray-500">
-            No files to preview
+            <div className="text-center">
+              <Code className="w-12 h-12 mx-auto mb-3 opacity-50" />
+              <p>No files to preview</p>
+            </div>
           </div>
         ) : (
           <div className="flex-1 flex overflow-hidden">
             {/* File List Sidebar */}
             <div className="w-64 border-r bg-gray-50 overflow-y-auto">
-              <div className="p-2">
-                <p className="text-xs font-medium text-gray-500 uppercase px-2 py-1">
+              <div className="p-3">
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
                   Files ({files.length})
                 </p>
-                {files.map((file, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => setSelectedFile(idx)}
-                    className={`w-full text-left px-3 py-2 rounded-lg mb-1 transition-colors ${
-                      selectedFile === idx
-                        ? 'bg-indigo-100 text-indigo-900'
-                        : 'hover:bg-gray-100 text-gray-700'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <FileCode className="w-4 h-4 flex-shrink-0" />
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">
-                          {file.path.split('/').pop()}
-                        </p>
-                        <span className={`inline-block text-xs px-1.5 py-0.5 rounded ${getLayerColor(file.layer)}`}>
-                          {file.layer}
-                        </span>
+                <div className="space-y-1">
+                  {files.map((file, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => setSelectedFile(idx)}
+                      className={`w-full text-left px-3 py-2.5 rounded-lg transition-colors ${
+                        selectedFile === idx
+                          ? 'bg-indigo-100 text-indigo-900'
+                          : 'hover:bg-gray-100 text-gray-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <FileCode className="w-4 h-4 flex-shrink-0 opacity-60" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium truncate">
+                            {file.path.split('/').pop()}
+                          </p>
+                          <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded mt-0.5 ${getLayerColor(file.layer)}`}>
+                            {file.layer}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  </button>
-                ))}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
             {/* Code Preview */}
             <div className="flex-1 overflow-hidden flex flex-col">
+              <div className="px-4 py-2 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+                <span className="text-sm font-mono text-gray-600">{files[selectedFile]?.path}</span>
+                <button
+                  onClick={() => navigator.clipboard.writeText(files[selectedFile]?.content || '')}
+                  className="text-xs px-2 py-1 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded"
+                >
+                  <Copy className="w-3.5 h-3.5 inline mr-1" />
+                  Copy
+                </button>
+              </div>
               <div className="flex-1 overflow-auto">
                 <CodeEditor
                   code={files[selectedFile]?.content || ''}

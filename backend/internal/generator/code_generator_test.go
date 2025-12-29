@@ -215,7 +215,11 @@ func TestCodeGenerator_GenerateModel(t *testing.T) {
 	expectedStrings := []string{
 		"package models",
 		"type User struct",
-		"BaseEntity",
+		"ID        int64",
+		"UUID      uuid.UUID",
+		"CreatedAt time.Time",
+		"UpdatedAt time.Time",
+		"DeletedAt sql.NullTime",
 		"Name string",
 		"Email string",
 		`json:"name"`,
@@ -419,11 +423,11 @@ func TestCodeGenerator_GenerateMigration(t *testing.T) {
 		t.Fatalf("GenerateMigration() error = %v", err)
 	}
 
-	// Check UP migration
+	// Check UP migration (MySQL syntax)
 	upExpected := []string{
 		"CREATE TABLE IF NOT EXISTS users",
-		"id BIGSERIAL PRIMARY KEY",
-		"uuid UUID NOT NULL UNIQUE",
+		"id BIGINT PRIMARY KEY AUTO_INCREMENT",
+		"uuid CHAR(36) NOT NULL UNIQUE",
 		"created_at TIMESTAMP",
 		"updated_at TIMESTAMP",
 		"deleted_at TIMESTAMP",

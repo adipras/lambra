@@ -1,15 +1,31 @@
-import React, { useState } from 'react'
-import { Plus, Trash2, X } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { Plus, Trash2, X, Check, Database, Zap, Info, ToggleLeft, ToggleRight, GripVertical, AlertCircle } from 'lucide-react'
 
 const FIELD_TYPES = [
-  { value: 'string', label: 'String' },
-  { value: 'int', label: 'Integer' },
-  { value: 'float', label: 'Float' },
-  { value: 'bool', label: 'Boolean' },
-  { value: 'date', label: 'Date' },
-  { value: 'datetime', label: 'DateTime' },
-  { value: 'json', label: 'JSON' },
+  { value: 'string', label: 'String', icon: 'Aa', color: 'bg-blue-100 text-blue-700' },
+  { value: 'text', label: 'Text', icon: 'Tt', color: 'bg-blue-100 text-blue-700' },
+  { value: 'int', label: 'Integer', icon: '#', color: 'bg-green-100 text-green-700' },
+  { value: 'float', label: 'Float', icon: '.0', color: 'bg-green-100 text-green-700' },
+  { value: 'bool', label: 'Boolean', icon: '?', color: 'bg-purple-100 text-purple-700' },
+  { value: 'date', label: 'Date', icon: 'D', color: 'bg-orange-100 text-orange-700' },
+  { value: 'datetime', label: 'DateTime', icon: 'DT', color: 'bg-orange-100 text-orange-700' },
+  { value: 'json', label: 'JSON', icon: '{}', color: 'bg-yellow-100 text-yellow-700' },
 ]
+
+const ENDPOINT_OPTIONS = [
+  { key: 'list', name: 'List All', method: 'GET', path: '/{entities}', description: 'Get paginated list with filtering', icon: '📋' },
+  { key: 'get', name: 'Get by ID', method: 'GET', path: '/{entities}/:id', description: 'Get single record by ID', icon: '🔍' },
+  { key: 'create', name: 'Create', method: 'POST', path: '/{entities}', description: 'Create new record', icon: '➕' },
+  { key: 'update', name: 'Update', method: 'PUT', path: '/{entities}/:id', description: 'Update existing record', icon: '✏️' },
+  { key: 'delete', name: 'Delete', method: 'DELETE', path: '/{entities}/:id', description: 'Soft delete record', icon: '🗑️' },
+]
+
+const METHOD_COLORS = {
+  GET: 'bg-blue-500',
+  POST: 'bg-green-500',
+  PUT: 'bg-yellow-500',
+  DELETE: 'bg-red-500',
+}
 
 export const EntityForm = ({ onSubmit, onCancel, initialData = null, isLoading = false }) => {
   const [formData, setFormData] = useState({
@@ -19,11 +35,36 @@ export const EntityForm = ({ onSubmit, onCancel, initialData = null, isLoading =
     fields: initialData?.fields || [
       { name: '', type: 'string', required: false, unique: false, length: 255, description: '' }
     ],
+    generate_endpoints: {
+      list: true,
+      get: true,
+      create: true,
+      update: true,
+      delete: true,
+    },
   })
+
+  const [errors, setErrors] = useState({})
+  const [activeFieldIndex, setActiveFieldIndex] = useState(null)
+
+  // Auto-generate table_name from entity name
+  useEffect(() => {
+    if (!initialData && formData.name) {
+      const tableName = formData.name
+        .replace(/([A-Z])/g, '_$1')
+        .toLowerCase()
+        .replace(/^_/, '')
+        .replace(/\s+/g, '_') + 's'
+      setFormData(prev => ({ ...prev, table_name: tableName }))
+    }
+  }, [formData.name, initialData])
 
   const handleChange = (e) => {
     const { name, value } = e.target
     setFormData(prev => ({ ...prev, [name]: value }))
+    if (errors[name]) {
+      setErrors(prev => ({ ...prev, [name]: null }))
+    }
   }
 
   const handleFieldChange = (index, field, value) => {
@@ -33,10 +74,12 @@ export const EntityForm = ({ onSubmit, onCancel, initialData = null, isLoading =
   }
 
   const addField = () => {
+    const newIndex = formData.fields.length
     setFormData(prev => ({
       ...prev,
       fields: [...prev.fields, { name: '', type: 'string', required: false, unique: false, length: 255, description: '' }]
     }))
+    setActiveFieldIndex(newIndex)
   }
 
   const removeField = (index) => {
@@ -44,49 +87,111 @@ export const EntityForm = ({ onSubmit, onCancel, initialData = null, isLoading =
       ...prev,
       fields: prev.fields.filter((_, i) => i !== index)
     }))
+    if (activeFieldIndex === index) {
+      setActiveFieldIndex(null)
+    }
+  }
+
+  const handleEndpointChange = (endpoint, checked) => {
+    setFormData(prev => ({
+      ...prev,
+      generate_endpoints: {
+        ...prev.generate_endpoints,
+        [endpoint]: checked,
+      },
+    }))
+  }
+
+  const toggleAllEndpoints = (enabled) => {
+    setFormData(prev => ({
+      ...prev,
+      generate_endpoints: {
+        list: enabled,
+        get: enabled,
+        create: enabled,
+        update: enabled,
+        delete: enabled,
+      },
+    }))
+  }
+
+  const allEndpointsEnabled = Object.values(formData.generate_endpoints).every(v => v)
+  const someEndpointsEnabled = Object.values(formData.generate_endpoints).some(v => v)
+  const enabledEndpointsCount = Object.values(formData.generate_endpoints).filter(v => v).length
+
+  const validateForm = () => {
+    const newErrors = {}
+    if (!formData.name.trim()) newErrors.name = 'Entity name is required'
+    if (!formData.table_name.trim()) newErrors.table_name = 'Table name is required'
+    if (formData.fields.some(f => !f.name.trim())) newErrors.fields = 'All fields must have a name'
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
   }
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    onSubmit(formData)
+    if (validateForm()) {
+      onSubmit(formData)
+    }
+  }
+
+  const getFieldTypeInfo = (type) => {
+    return FIELD_TYPES.find(t => t.value === type) || FIELD_TYPES[0]
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Basic Info */}
+    <form onSubmit={handleSubmit} className="space-y-8">
+      {/* Basic Info Section */}
       <div className="space-y-4">
-        <h3 className="text-lg font-semibold text-gray-900">Basic Information</h3>
-
-        <div>
-          <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
-            Entity Name <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="text"
-            id="name"
-            name="name"
-            value={formData.name}
-            onChange={handleChange}
-            required
-            className="input"
-            placeholder="e.g., User, Product, Order"
-          />
+        <div className="flex items-center gap-2 mb-4">
+          <div className="p-2 bg-indigo-100 rounded-lg">
+            <Database className="w-5 h-5 text-indigo-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">Entity Information</h3>
         </div>
 
-        <div>
-          <label htmlFor="table_name" className="block text-sm font-medium text-gray-700 mb-1">
-            Table Name <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="text"
-            id="table_name"
-            name="table_name"
-            value={formData.table_name}
-            onChange={handleChange}
-            required
-            className="input"
-            placeholder="e.g., users, products, orders"
-          />
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+              Entity Name <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              id="name"
+              name="name"
+              value={formData.name}
+              onChange={handleChange}
+              className={`input ${errors.name ? 'border-red-500 focus:ring-red-500' : ''}`}
+              placeholder="e.g., Product, Customer, Order"
+            />
+            {errors.name && (
+              <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" /> {errors.name}
+              </p>
+            )}
+            <p className="mt-1 text-xs text-gray-500">Use PascalCase (e.g., ProductCategory)</p>
+          </div>
+
+          <div>
+            <label htmlFor="table_name" className="block text-sm font-medium text-gray-700 mb-1">
+              Table Name <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              id="table_name"
+              name="table_name"
+              value={formData.table_name}
+              onChange={handleChange}
+              className={`input ${errors.table_name ? 'border-red-500 focus:ring-red-500' : ''}`}
+              placeholder="e.g., products, customers"
+            />
+            {errors.table_name && (
+              <p className="mt-1 text-sm text-red-500 flex items-center gap-1">
+                <AlertCircle className="w-3 h-3" /> {errors.table_name}
+              </p>
+            )}
+            <p className="mt-1 text-xs text-gray-500">Database table name (auto-generated)</p>
+          </div>
         </div>
 
         <div>
@@ -98,145 +203,323 @@ export const EntityForm = ({ onSubmit, onCancel, initialData = null, isLoading =
             name="description"
             value={formData.description}
             onChange={handleChange}
-            rows={3}
+            rows={2}
             className="input"
-            placeholder="Describe this entity..."
+            placeholder="Brief description of this entity..."
           />
         </div>
       </div>
 
-      {/* Fields */}
+      {/* Fields Section */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-900">Fields</h3>
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-green-100 rounded-lg">
+              <GripVertical className="w-5 h-5 text-green-600" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Fields</h3>
+              <p className="text-sm text-gray-500">{formData.fields.length} field(s) defined</p>
+            </div>
+          </div>
           <button
             type="button"
             onClick={addField}
-            className="btn btn-secondary text-sm"
+            className="btn btn-primary text-sm"
           >
             <Plus className="w-4 h-4 mr-1" />
             Add Field
           </button>
         </div>
 
+        {errors.fields && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4" /> {errors.fields}
+          </div>
+        )}
+
         <div className="space-y-3">
-          {formData.fields.map((field, index) => (
-            <div key={index} className="border border-gray-200 rounded-lg p-4 space-y-3">
-              <div className="flex items-start justify-between">
-                <h4 className="text-sm font-medium text-gray-700">Field {index + 1}</h4>
-                {formData.fields.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => removeField(index)}
-                    className="text-red-600 hover:text-red-700"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
+          {formData.fields.map((field, index) => {
+            const typeInfo = getFieldTypeInfo(field.type)
+            const isActive = activeFieldIndex === index
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    Field Name
-                  </label>
-                  <input
-                    type="text"
-                    value={field.name}
-                    onChange={(e) => handleFieldChange(index, 'name', e.target.value)}
-                    className="input text-sm"
-                    placeholder="e.g., email"
-                    required
-                  />
+            return (
+              <div
+                key={index}
+                className={`border rounded-lg transition-all ${
+                  isActive
+                    ? 'border-indigo-300 ring-2 ring-indigo-100 shadow-sm'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                {/* Field Header */}
+                <div
+                  className="flex items-center justify-between p-3 cursor-pointer"
+                  onClick={() => setActiveFieldIndex(isActive ? null : index)}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className={`w-8 h-8 flex items-center justify-center rounded-lg text-xs font-bold ${typeInfo.color}`}>
+                      {typeInfo.icon}
+                    </span>
+                    <div>
+                      <p className="font-medium text-gray-900">
+                        {field.name || <span className="text-gray-400 italic">Unnamed field</span>}
+                      </p>
+                      <div className="flex items-center gap-2 text-xs text-gray-500">
+                        <span>{typeInfo.label}</span>
+                        {field.required && (
+                          <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded">Required</span>
+                        )}
+                        {field.unique && (
+                          <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">Unique</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {formData.fields.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          removeField(index)
+                        }}
+                        className="p-1 text-red-500 hover:bg-red-50 rounded"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    Type
-                  </label>
-                  <select
-                    value={field.type}
-                    onChange={(e) => handleFieldChange(index, 'type', e.target.value)}
-                    className="input text-sm"
-                  >
-                    {FIELD_TYPES.map(type => (
-                      <option key={type.value} value={type.value}>{type.label}</option>
-                    ))}
-                  </select>
-                </div>
+                {/* Field Details (Expandable) */}
+                {isActive && (
+                  <div className="border-t border-gray-100 p-4 bg-gray-50 space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Field Name <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={field.name}
+                          onChange={(e) => handleFieldChange(index, 'name', e.target.value)}
+                          className="input text-sm"
+                          placeholder="e.g., email, price, status"
+                        />
+                      </div>
 
-                {(field.type === 'string') && (
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">
-                      Max Length
-                    </label>
-                    <input
-                      type="number"
-                      value={field.length || 255}
-                      onChange={(e) => handleFieldChange(index, 'length', parseInt(e.target.value))}
-                      className="input text-sm"
-                      min="1"
-                    />
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Data Type
+                        </label>
+                        <div className="grid grid-cols-4 gap-1">
+                          {FIELD_TYPES.map(type => (
+                            <button
+                              key={type.value}
+                              type="button"
+                              onClick={() => handleFieldChange(index, 'type', type.value)}
+                              className={`px-2 py-1.5 text-xs font-medium rounded border transition-all ${
+                                field.type === type.value
+                                  ? `${type.color} border-current`
+                                  : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                              }`}
+                            >
+                              {type.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      {(field.type === 'string' || field.type === 'text') && (
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">
+                            Max Length
+                          </label>
+                          <input
+                            type="number"
+                            value={field.length || 255}
+                            onChange={(e) => handleFieldChange(index, 'length', parseInt(e.target.value))}
+                            className="input text-sm"
+                            min="1"
+                            max="65535"
+                          />
+                        </div>
+                      )}
+
+                      <div className="col-span-2">
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Description
+                        </label>
+                        <input
+                          type="text"
+                          value={field.description || ''}
+                          onChange={(e) => handleFieldChange(index, 'description', e.target.value)}
+                          className="input text-sm"
+                          placeholder="What is this field for?"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex gap-4 pt-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={field.required}
+                          onChange={(e) => handleFieldChange(index, 'required', e.target.checked)}
+                          className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                        />
+                        <span className="text-sm text-gray-700">Required field</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={field.unique}
+                          onChange={(e) => handleFieldChange(index, 'unique', e.target.checked)}
+                          className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                        />
+                        <span className="text-sm text-gray-700">Unique constraint</span>
+                      </label>
+                    </div>
                   </div>
                 )}
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    Description
-                  </label>
-                  <input
-                    type="text"
-                    value={field.description || ''}
-                    onChange={(e) => handleFieldChange(index, 'description', e.target.value)}
-                    className="input text-sm"
-                    placeholder="Field description"
-                  />
-                </div>
               </div>
-
-              <div className="flex gap-4">
-                <label className="flex items-center text-sm text-gray-700">
-                  <input
-                    type="checkbox"
-                    checked={field.required}
-                    onChange={(e) => handleFieldChange(index, 'required', e.target.checked)}
-                    className="mr-2"
-                  />
-                  Required
-                </label>
-                <label className="flex items-center text-sm text-gray-700">
-                  <input
-                    type="checkbox"
-                    checked={field.unique}
-                    onChange={(e) => handleFieldChange(index, 'unique', e.target.checked)}
-                    className="mr-2"
-                  />
-                  Unique
-                </label>
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 
+      {/* Generate Endpoints Section */}
+      {!initialData && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="p-2 bg-purple-100 rounded-lg">
+                <Zap className="w-5 h-5 text-purple-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Auto-Generate Endpoints</h3>
+                <p className="text-sm text-gray-500">
+                  {enabledEndpointsCount} endpoint(s) will be created with request/response schemas
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => toggleAllEndpoints(!allEndpointsEnabled)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                allEndpointsEnabled
+                  ? 'bg-purple-100 text-purple-700 hover:bg-purple-200'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {allEndpointsEnabled ? (
+                <>
+                  <ToggleRight className="w-4 h-4" />
+                  All Selected
+                </>
+              ) : (
+                <>
+                  <ToggleLeft className="w-4 h-4" />
+                  Select All
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {ENDPOINT_OPTIONS.map((endpoint) => {
+              const isEnabled = formData.generate_endpoints[endpoint.key]
+              return (
+                <label
+                  key={endpoint.key}
+                  className={`relative flex items-start p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                    isEnabled
+                      ? 'border-purple-300 bg-purple-50'
+                      : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isEnabled}
+                    onChange={(e) => handleEndpointChange(endpoint.key, e.target.checked)}
+                    className="sr-only"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-lg">{endpoint.icon}</span>
+                      <span className={`px-2 py-0.5 text-xs font-bold text-white rounded ${METHOD_COLORS[endpoint.method]}`}>
+                        {endpoint.method}
+                      </span>
+                      <span className="font-medium text-gray-900">{endpoint.name}</span>
+                    </div>
+                    <p className="text-xs text-gray-500 font-mono">{endpoint.path}</p>
+                    <p className="text-xs text-gray-400 mt-1">{endpoint.description}</p>
+                  </div>
+                  <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ml-2 ${
+                    isEnabled ? 'bg-purple-500' : 'bg-gray-200'
+                  }`}>
+                    {isEnabled && <Check className="w-3 h-3 text-white" />}
+                  </div>
+                </label>
+              )
+            })}
+          </div>
+
+          {someEndpointsEnabled && (
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
+              <div className="flex gap-3">
+                <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-blue-800">
+                  <p className="font-medium mb-1">Generated endpoints will include:</p>
+                  <ul className="list-disc list-inside space-y-0.5 text-blue-700">
+                    <li>Request body JSON Schema with validation rules</li>
+                    <li>Response JSON Schema with example values</li>
+                    <li>Auto-generated descriptions</li>
+                    <li>Pagination for list endpoints</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Actions */}
-      <div className="flex justify-end gap-3 pt-4 border-t">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="btn btn-secondary"
-          disabled={isLoading}
-        >
-          <X className="w-4 h-4 mr-1" />
-          Cancel
-        </button>
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={isLoading}
-        >
-          {isLoading ? 'Saving...' : (initialData ? 'Update Entity' : 'Create Entity')}
-        </button>
+      <div className="flex items-center justify-between pt-6 border-t border-gray-200">
+        <p className="text-sm text-gray-500">
+          {formData.fields.filter(f => f.name.trim()).length} fields configured
+        </p>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="btn btn-secondary"
+            disabled={isLoading}
+          >
+            <X className="w-4 h-4 mr-1" />
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <>
+                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <Check className="w-4 h-4 mr-1" />
+                {initialData ? 'Update Entity' : 'Create Entity'}
+              </>
+            )}
+          </button>
+        </div>
       </div>
     </form>
   )

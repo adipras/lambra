@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useCreateProject } from '../hooks/useProjects'
 import { ErrorAlert } from '../components/shared/ErrorAlert'
 import { LoadingSpinner } from '../components/shared/LoadingSpinner'
+import { Database, AlertCircle, CheckCircle } from 'lucide-react'
 
 export const ServiceNew = () => {
   const navigate = useNavigate()
@@ -12,8 +13,15 @@ export const ServiceNew = () => {
     name: '',
     description: '',
     namespace: '',
+    // Database configuration
+    db_host: 'host.docker.internal',
+    db_port: 3306,
+    db_user: 'root',
+    db_password: '',
+    db_name: '',
   })
   const [error, setError] = useState(null)
+  const [dbValidated, setDbValidated] = useState(false)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -28,11 +36,15 @@ export const ServiceNew = () => {
   }
 
   const handleChange = (e) => {
-    const { name, value } = e.target
+    const { name, value, type } = e.target
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      [name]: type === 'number' ? parseInt(value) || 0 : value
     }))
+    // Reset validation when db config changes
+    if (name.startsWith('db_')) {
+      setDbValidated(false)
+    }
   }
 
   return (
@@ -112,6 +124,138 @@ export const ServiceNew = () => {
               Optional description (max 500 characters)
             </p>
           </div>
+
+          {/* Database Configuration Section */}
+          <div className="border-t border-gray-200 pt-6">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="p-2 bg-indigo-100 rounded-lg">
+                <Database className="w-5 h-5 text-indigo-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Database Configuration</h3>
+                <p className="text-sm text-gray-500">
+                  MySQL database for the generated service (connection will be validated)
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              {/* DB Host */}
+              <div>
+                <label htmlFor="db_host" className="label">
+                  Database Host *
+                </label>
+                <input
+                  type="text"
+                  id="db_host"
+                  name="db_host"
+                  value={formData.db_host}
+                  onChange={handleChange}
+                  className="input"
+                  placeholder="localhost or host.docker.internal"
+                  required
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Use "host.docker.internal" for local MySQL
+                </p>
+              </div>
+
+              {/* DB Port */}
+              <div>
+                <label htmlFor="db_port" className="label">
+                  Port *
+                </label>
+                <input
+                  type="number"
+                  id="db_port"
+                  name="db_port"
+                  value={formData.db_port}
+                  onChange={handleChange}
+                  className="input"
+                  placeholder="3306"
+                  required
+                  min={1}
+                  max={65535}
+                />
+              </div>
+
+              {/* DB User */}
+              <div>
+                <label htmlFor="db_user" className="label">
+                  Username *
+                </label>
+                <input
+                  type="text"
+                  id="db_user"
+                  name="db_user"
+                  value={formData.db_user}
+                  onChange={handleChange}
+                  className="input"
+                  placeholder="root"
+                  required
+                />
+              </div>
+
+              {/* DB Password */}
+              <div>
+                <label htmlFor="db_password" className="label">
+                  Password *
+                </label>
+                <input
+                  type="password"
+                  id="db_password"
+                  name="db_password"
+                  value={formData.db_password}
+                  onChange={handleChange}
+                  className="input"
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
+
+              {/* DB Name */}
+              <div className="col-span-2">
+                <label htmlFor="db_name" className="label">
+                  Database Name *
+                </label>
+                <input
+                  type="text"
+                  id="db_name"
+                  name="db_name"
+                  value={formData.db_name}
+                  onChange={handleChange}
+                  className="input"
+                  placeholder="my_service_db"
+                  required
+                  pattern="[a-zA-Z0-9_]+"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Database will be created if it doesn't exist
+                </p>
+              </div>
+            </div>
+
+            {/* Database validation info */}
+            <div className={`mt-4 p-3 rounded-lg flex items-start gap-2 ${
+              dbValidated
+                ? 'bg-green-50 border border-green-200'
+                : 'bg-yellow-50 border border-yellow-200'
+            }`}>
+              {dbValidated ? (
+                <>
+                  <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
+                  <p className="text-sm text-green-700">Database connection validated</p>
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0" />
+                  <p className="text-sm text-yellow-700">
+                    Database connection will be validated when you create the service
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Actions */}
@@ -148,10 +292,11 @@ export const ServiceNew = () => {
           What happens next?
         </h3>
         <ul className="text-sm text-blue-800 space-y-1">
-          <li>• Service project will be created in the database</li>
+          <li>• Database connection will be validated</li>
+          <li>• Database will be created if it doesn't exist</li>
+          <li>• Service project will be created with your configuration</li>
           <li>• You can then define entities and endpoints</li>
-          <li>• Generate the actual microservice code</li>
-          <li>• Deploy to Docker (local) or Kubernetes</li>
+          <li>• Generated service will auto-migrate tables on startup</li>
         </ul>
       </div>
     </div>

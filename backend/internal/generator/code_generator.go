@@ -51,6 +51,7 @@ type FieldContext struct {
 	Nullable     bool
 	DefaultValue string
 	Description  string
+	Length       int
 }
 
 // GenerateAll generates all code for an entity
@@ -207,6 +208,7 @@ func (g *CodeGenerator) parseField(field models.EntityField) FieldContext {
 		Nullable:     nullable,
 		DefaultValue: field.DefaultValue,
 		Description:  field.Description,
+		Length:       field.Length,
 	}
 }
 

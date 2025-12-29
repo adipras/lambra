@@ -51,11 +51,21 @@ type EntityWithEndpoints struct {
 
 // CreateEntityRequest for creating a new entity
 type CreateEntityRequest struct {
-	ProjectUUID string        `json:"project_id"` // Will be set from URL param, not from request body
-	Name        string        `json:"name" binding:"required,min=2,max=100"`
-	TableName   string        `json:"table_name" binding:"required,min=2,max=100"`
-	Description string        `json:"description" binding:"max=500"`
-	Fields      []EntityField `json:"fields" binding:"required,min=1"`
+	ProjectUUID       string             `json:"project_id"` // Will be set from URL param, not from request body
+	Name              string             `json:"name" binding:"required,min=2,max=100"`
+	TableName         string             `json:"table_name" binding:"required,min=2,max=100"`
+	Description       string             `json:"description" binding:"max=500"`
+	Fields            []EntityField      `json:"fields" binding:"required,min=1"`
+	GenerateEndpoints *GenerateEndpoints `json:"generate_endpoints,omitempty"`
+}
+
+// GenerateEndpoints options for auto-generating CRUD endpoints
+type GenerateEndpoints struct {
+	List   bool `json:"list"`   // GET /entities
+	Get    bool `json:"get"`    // GET /entities/:id
+	Create bool `json:"create"` // POST /entities
+	Update bool `json:"update"` // PUT /entities/:id
+	Delete bool `json:"delete"` // DELETE /entities/:id
 }
 
 // UpdateEntityRequest for updating entity

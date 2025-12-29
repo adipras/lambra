@@ -177,8 +177,8 @@ func (h *EndpointHandler) TestEndpoint(c *gin.Context) {
 		return
 	}
 
-	// Build URL
-	targetURL := status.URL + endpoint.Path
+	// Build URL - use InternalURL for backend-to-service communication
+	targetURL := status.InternalURL + endpoint.Path
 
 	// Replace path parameters if provided
 	for key, value := range req.Params {

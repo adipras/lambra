@@ -45,6 +45,8 @@ services:
       - ./backend:/app
       - lambra_workspace:/workspace
       - /var/run/docker.sock:/var/run/docker.sock  # For running generated services
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Enable host.docker.internal on Linux
     networks:
       - lambra-network
     restart: unless-stopped

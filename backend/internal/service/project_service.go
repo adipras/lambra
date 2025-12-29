@@ -3,7 +3,9 @@ package service
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/yourusername/lambra/internal/models"
 	"github.com/yourusername/lambra/internal/repository"
 )
@@ -16,11 +18,50 @@ func NewProjectService(repo *repository.ProjectRepository) *ProjectService {
 	return &ProjectService{repo: repo}
 }
 
+// ValidateDBConnection tests if we can connect to the specified database
+func (s *ProjectService) ValidateDBConnection(host string, port int, user, password, dbName string) error {
+	// Build DSN (Data Source Name)
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/?timeout=5s", user, password, host, port)
+
+	// Try to connect
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return fmt.Errorf("failed to open connection: %w", err)
+	}
+	defer db.Close()
+
+	// Set connection timeout
+	db.SetConnMaxLifetime(5 * time.Second)
+
+	// Ping to verify connection
+	if err := db.Ping(); err != nil {
+		return fmt.Errorf("failed to connect to database: %w", err)
+	}
+
+	// Try to create the database if it doesn't exist
+	_, err = db.Exec(fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s`", dbName))
+	if err != nil {
+		return fmt.Errorf("failed to create database: %w", err)
+	}
+
+	return nil
+}
+
 func (s *ProjectService) CreateProject(req *models.CreateProjectRequest) (*models.Project, error) {
+	// Validate database connection first
+	if err := s.ValidateDBConnection(req.DBHost, req.DBPort, req.DBUser, req.DBPassword, req.DBName); err != nil {
+		return nil, fmt.Errorf("database connection failed: %w", err)
+	}
+
 	project := &models.Project{
-		Name:      req.Name,
-		Namespace: req.Namespace,
-		Status:    models.ProjectStatusActive,
+		Name:       req.Name,
+		Namespace:  req.Namespace,
+		Status:     models.ProjectStatusActive,
+		DBHost:     req.DBHost,
+		DBPort:     req.DBPort,
+		DBUser:     req.DBUser,
+		DBPassword: req.DBPassword,
+		DBName:     req.DBName,
 	}
 
 	if req.Description != "" {

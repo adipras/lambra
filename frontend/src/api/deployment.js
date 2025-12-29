@@ -21,6 +21,11 @@ export const deploymentApi = {
     return axios.post(`/projects/${projectId}/redeploy`)
   },
 
+  // Destroy a service completely (stop containers, remove volumes, delete workspace)
+  destroy: async (projectId) => {
+    return axios.delete(`/projects/${projectId}/destroy`)
+  },
+
   // Get service deployment status
   getStatus: async (projectId) => {
     return axios.get(`/projects/${projectId}/status`)

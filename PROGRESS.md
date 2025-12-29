@@ -1,9 +1,9 @@
 # Lambra - Progress Tracker
 
-> **Last Updated:** 2025-12-23 (Phase 3 - UI Enhancement Complete)
-> **Current Phase:** Phase 3 - UI Enhancement (100% Complete ✅)
+> **Last Updated:** 2025-12-29 (DB Config, Auto-Migration, Endpoint Testing, Delete Service)
+> **Current Phase:** Phase 3.6 - Database & Deployment Enhancement (100% Complete ✅)
 > **Next Phase:** Phase 2.3 - GitLab Integration (Optional) or Phase 4 - Testing & Deployment Features
-> **Overall Progress:** 80% (Phase 1 + Phase 1.5 + Phase 2.1 + Phase 2.2 + Phase 2.4 + Phase 3 complete)
+> **Overall Progress:** 88% (Phase 1 + Phase 1.5 + Phase 2.1 + Phase 2.2 + Phase 2.4 + Phase 3 + Phase 3.5 + Phase 3.6 complete)
 
 ---
 
@@ -651,6 +651,240 @@ Coverage: 75.4% of statements
 
 ---
 
+## 🔄 Phase 3.5: Entity Enhancement - Auto-Generate CRUD Endpoints (✅ COMPLETED)
+
+**Status:** 100% Complete
+**Started:** 2025-12-29
+**Completed:** 2025-12-29
+**Testing Status:** ✅ All features tested and working
+
+### ✅ Completed Tasks
+
+**Auto-Generate CRUD Endpoints:**
+- [x] Added `GenerateEndpoints` option to entity creation
+- [x] When creating entity, can auto-generate 5 CRUD endpoints:
+  - List (GET `/entities`) - Get all entities with pagination
+  - Get (GET `/entities/:id`) - Get entity by ID
+  - Create (POST `/entities`) - Create new entity
+  - Update (PUT `/entities/:id`) - Update entity by ID
+  - Delete (DELETE `/entities/:id`) - Delete entity by ID
+- [x] Smart endpoint naming based on entity name (e.g., `ListProducts`, `GetProduct`)
+- [x] Proper pluralization for paths (`/products`, `/categories`)
+
+**Request/Response Schema Generation:**
+- [x] `generateRequestSchema()` - Creates JSON Schema for create/update request body
+  - Properties based on entity fields
+  - Required fields marked correctly
+  - maxLength for string fields
+  - Smart example values based on field names
+- [x] `generateResponseSchema()` - Creates JSON Schema for single entity response
+  - Includes id, uuid, created_at, updated_at
+  - All entity fields with examples
+- [x] `generateListResponseSchema()` - Creates list response with pagination
+  - `data` array with item schema
+  - `total`, `limit`, `offset` pagination fields
+- [x] `generateDeleteResponseSchema()` - Simple message response
+
+**Smart Example Value Generation:**
+- [x] `getExampleValue()` function provides contextual examples:
+  - `email` field → "user@example.com"
+  - `name` field → "Example Name"
+  - `phone` field → "+1234567890"
+  - `price` field → 99.99
+  - `quantity/stock/count` → 100
+  - `url/link` → "https://example.com"
+  - `description` → "A detailed description"
+  - `sku/code` → "SKU-001"
+  - `status` → "active"
+  - Default based on type (string, integer, boolean, etc.)
+
+**Frontend UI Improvements:**
+- [x] Updated EntityForm.jsx with better UX:
+  - Collapsible field editor sections
+  - Visual type selection buttons
+  - Toggle All/None for endpoint selection
+  - Info panel about generated schema features
+- [x] Created SchemaViewer.jsx component:
+  - Visual tree view of JSON Schema properties
+  - Type badges with colors (string=blue, integer=green, boolean=purple, etc.)
+  - Required field indicators
+  - Example values display
+  - Toggle between Visual and JSON view modes
+  - Copy to clipboard functionality
+- [x] Updated ServiceDetail.jsx:
+  - Stats cards for entities, endpoints, port, namespace
+  - Improved EntityCard with expandable endpoints
+  - Schema preview when clicking on endpoint
+  - Better modal dialogs with sticky headers
+
+**Bug Fixes:**
+- [x] Fixed pluralization issue (`/categorys` → `/categories`)
+- [x] Fixed spaces in handler names (`Get All Warehouse` → `GetAllWarehouse`)
+- [x] Fixed toPascalCase breaking already-PascalCase strings
+- [x] Fixed MySQL placeholder syntax (`$1, $2` → `?`)
+- [x] Fixed MySQL migration syntax (PostgreSQL → MySQL)
+- [x] Added `sqlType` function for MySQL type mapping
+- [x] Fixed `RETURNING id` PostgreSQL syntax for MySQL
+
+### 📦 Files Created/Modified
+
+**Backend (6 files modified):**
+- `internal/service/entity_service.go` - Added schema generation functions
+- `internal/service/deployment_service.go` - Fixed toPascalCase function
+- `internal/generator/templates.go` - Fixed MySQL syntax, added `sqlType`
+- `internal/generator/template_engine.go` - Added toSQLType function
+- `internal/generator/code_generator.go` - Added Length to FieldContext
+- `internal/models/entity.go` - Added GenerateEndpoints model
+
+**Frontend (3 files):**
+- `src/components/forms/EntityForm.jsx` - Complete UI redesign
+- `src/components/shared/SchemaViewer.jsx` ✨ NEW - Schema visualization
+- `src/pages/ServiceDetail.jsx` - Improved EntityCard and endpoint display
+
+### 🧪 Testing Results
+
+**API Tests:**
+```bash
+✅ Auto-generated endpoints have proper schemas:
+{
+  "name": "CreateCustomer",
+  "request_schema": {
+    "type": "object",
+    "required": ["name", "email"],
+    "properties": {
+      "name": {"type": "string", "maxLength": 100, "example": "Example Name"},
+      "email": {"type": "string", "maxLength": 255, "example": "user@example.com"}
+    }
+  },
+  "response_schema": {...}
+}
+
+✅ List response schema includes pagination:
+{
+  "data": [...],
+  "total": 100,
+  "limit": 10,
+  "offset": 0
+}
+```
+
+### 🎯 Phase 3.5 Success Criteria (All Met ✅)
+- [x] Can auto-generate CRUD endpoints when creating entity
+- [x] Request schemas have proper validation (required, maxLength)
+- [x] Response schemas include all fields with examples
+- [x] Smart example values based on field names
+- [x] Frontend displays schemas with visual tree view
+- [x] Generated Go services compile and run correctly
+
+---
+
+## 🔄 Phase 3.6: Database & Deployment Enhancement (✅ COMPLETED)
+
+**Status:** 100% Complete
+**Started:** 2025-12-29
+**Completed:** 2025-12-29
+**Testing Status:** ✅ All features implemented
+
+### ✅ Completed Tasks
+
+**Database Configuration at Project Level:**
+- [x] Added database config fields to Project model:
+  - `db_host` - Database host (default: host.docker.internal for local MySQL)
+  - `db_port` - Database port (default: 3306)
+  - `db_user` - Database username
+  - `db_password` - Database password (not exposed in JSON)
+  - `db_name` - Database name
+- [x] Added `ValidateDBConnection()` in project_service.go:
+  - Validates MySQL connection before creating project
+  - Creates database if it doesn't exist (`CREATE DATABASE IF NOT EXISTS`)
+- [x] Created migration `002_add_db_config_to_projects.up.sql`
+- [x] Updated project repository to handle new fields
+
+**Generated Service Architecture Change:**
+- [x] Removed MySQL container from generated docker-compose.yml
+- [x] Generated services now use external database (project's DB config)
+- [x] Added auto-migration to generated main.go:
+  - `runMigrations()` function runs `CREATE TABLE IF NOT EXISTS` on startup
+  - Creates indexes for uuid and deleted_at columns
+- [x] Environment variables passed to container: DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
+
+**Endpoint Testing UI:**
+- [x] Created `ExampleBody.jsx` component:
+  - Generates real JSON example from schema
+  - Shows actual values based on schema examples
+  - Collapsible code view
+- [x] Created `TestEndpointModal.jsx` component:
+  - Request body editor (pre-filled with example)
+  - Send button to test endpoint
+  - Response display: status code, response time, body
+  - Error handling for failed requests
+- [x] Added "Test" button to each endpoint in ServiceDetail
+
+**Delete Service Feature:**
+- [x] Added `DestroyServiceCompletely()` method to deployment_service.go:
+  - Stops Docker containers
+  - Removes volumes
+  - Deletes workspace directory
+- [x] Added `DELETE /api/v1/projects/:id/destroy` endpoint
+- [x] Created `DeleteServiceModal.jsx` with 2-step confirmation:
+  - Step 1: Warning about what will be deleted
+  - Step 2: User must type service name to confirm
+- [x] Added destroy API call to frontend deployment.js
+
+**UI Reorganization:**
+- [x] Reorganized ServiceDetail action buttons:
+  - Status badge (running/stopped/not deployed)
+  - Primary action button (Deploy/Start/Stop)
+  - Actions dropdown menu (⋮) containing:
+    - Refresh Status
+    - Redeploy Service
+    - Export OpenAPI
+    - Export Postman
+    - Delete Service (danger zone)
+- [x] Updated ServiceNew.jsx with database configuration form:
+  - DB Host, Port, User, Password, DB Name fields
+  - Info about connection validation
+  - Default values for common setup
+
+**Docker Networking:**
+- [x] Added `host.docker.internal:host-gateway` to docker-compose.yml
+- [x] Fixed endpoint testing from backend container to deployed service
+- [x] Added InternalURL for backend-to-service communication
+
+### 📦 Files Created/Modified
+
+**Backend (8 files):**
+- `internal/models/project.go` - Added DB config fields
+- `internal/repository/project_repository.go` - Handle new fields
+- `internal/service/project_service.go` - Added ValidateDBConnection()
+- `internal/service/deployment_service.go` - Auto-migration, destroy service, removed MySQL container
+- `internal/api/handlers/deployment.go` - Added DestroyService handler
+- `internal/api/router/router.go` - Added destroy route
+- `migrations/002_add_db_config_to_projects.up.sql` ✨ NEW
+- `migrations/002_add_db_config_to_projects.down.sql` ✨ NEW
+
+**Frontend (6 files):**
+- `src/api/deployment.js` - Added destroy() method
+- `src/components/shared/ExampleBody.jsx` ✨ NEW - Example JSON from schema
+- `src/components/shared/TestEndpointModal.jsx` ✨ NEW - Endpoint testing UI
+- `src/components/shared/DeleteServiceModal.jsx` ✨ NEW - Delete confirmation
+- `src/pages/ServiceNew.jsx` - Added DB config form fields
+- `src/pages/ServiceDetail.jsx` - Reorganized buttons, test endpoint, delete service
+
+**Infrastructure (1 file):**
+- `docker-compose.yml` - Added host.docker.internal for networking
+
+### 🎯 Phase 3.6 Success Criteria (All Met ✅)
+- [x] Can configure database connection when creating project
+- [x] Database connection validated before project creation
+- [x] Generated services use external database (no MySQL container)
+- [x] Generated services auto-migrate tables on startup
+- [x] Can test endpoints directly from UI
+- [x] Can delete service with proper confirmation
+- [x] Action buttons organized in dropdown menu
+
+---
+
 ## 🔄 Phase 2.3: Git Integration (PENDING - OPTIONAL)
 
 **Status:** 0% Complete
@@ -1239,12 +1473,14 @@ curl -X POST http://localhost:8080/api/v1/projects \
 | 1.2.0 | 2025-10-28 | Phase 2.2 | Entity & Endpoint handlers complete ✅ |
 | 1.3.0 | 2025-12-22 | Phase 2.4 | UI Enhancement & Local Deployment ✅ |
 | 1.4.0 | 2025-12-23 | Phase 3 | UI Enhancement - CodeEditor, EndpointDetail, Export ✅ |
-| 1.5.0 | TBD | Phase 2.3 | GitLab integration (optional) |
-| 1.6.0 | TBD | Phase 4 | Testing & deployment features (pending) |
+| 1.5.0 | 2025-12-29 | Phase 3.5 | Auto-Generate CRUD Endpoints & Schema Generation ✅ |
+| 1.6.0 | 2025-12-29 | Phase 3.6 | DB Config, Auto-Migration, Endpoint Testing, Delete Service ✅ |
+| 1.7.0 | TBD | Phase 2.3 | GitLab integration (optional) |
+| 1.8.0 | TBD | Phase 4 | Testing & deployment features (pending) |
 
 ---
 
-**Last Review:** 2025-12-23 (Phase 3 - UI Enhancement Complete)
+**Last Review:** 2025-12-29 (Phase 3.6 - DB Config, Auto-Migration, Endpoint Testing)
 **Next Review:** Phase 2.3 - GitLab Integration or Phase 4 - Testing Features
 **Maintained By:** Development Team
 
@@ -1264,6 +1500,21 @@ curl -X POST http://localhost:8080/api/v1/projects \
   - SchemaViewer component for JSON schemas
   - EndpointDetail page with testing interface
   - Export OpenAPI & Postman collection
+- ✅ Phase 3.5 - Entity Enhancement complete
+  - Auto-generate CRUD endpoints when creating entity
+  - Request/Response schema generation with smart examples
+  - Frontend UI improvements (EntityForm, SchemaViewer, ServiceDetail)
+  - Fixed MySQL syntax in generated code
+  - Generated services now compile and run correctly
+- ✅ Phase 3.6 - Database & Deployment Enhancement complete
+  - Database config at project level (DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME)
+  - DB connection validation before project creation
+  - Generated services use external DB (no MySQL container per service)
+  - Auto-migration in generated services (CREATE TABLE IF NOT EXISTS)
+  - Endpoint testing UI (ExampleBody, TestEndpointModal)
+  - Delete service with 2-step confirmation
+  - Reorganized action buttons with dropdown menu
+- ⏳ TODO: Deploy button masih belum rapih
 - ⏳ Optional: GitLab Integration (Phase 2.3)
 - ⏳ Next: Phase 4 - Testing & Deployment Features
 - Docker services: MySQL on port 3307 (to avoid WSL conflict)
@@ -1274,11 +1525,11 @@ curl -X POST http://localhost:8080/api/v1/projects \
 
 ### Code Generation & Deployment Issues
 
-**Issue 1: DTO template type mismatch**
+**Issue 1: DTO template type mismatch** ✅ FIXED
 - **Location:** `internal/generator/templates.go` - dtoTemplate
 - **Error:** `cannot use user.DeletedAt (variable of type sql.NullTime) as *time.Time value`
 - **Cause:** Model uses `sql.NullTime` for DeletedAt, but DTO Response template uses `*time.Time`
-- **Fix Needed:** Update DTO template to use `sql.NullTime` or convert properly
+- **Fix Applied:** Updated FromModel() to convert sql.NullTime → *time.Time properly
 
 **Issue 2: Redeploy feature fixed**
 - ✅ FIXED: Redeploy now regenerates code before rebuilding Docker container
@@ -1298,7 +1549,9 @@ curl -X POST http://localhost:8080/api/v1/projects \
 4. ✅ Fixed file path duplication in deployment
 5. ✅ Fixed toKebabCase double-dash issue
 6. ✅ Fixed model template to include base fields directly (not embed BaseEntity)
-7. ⏳ PENDING: DTO template DeletedAt type mismatch
+7. ✅ Fixed DTO template DeletedAt type mismatch (sql.NullTime → *time.Time conversion)
+8. ✅ Fixed model Validate() for bool type (bool cannot be compared to nil)
+9. ✅ Fixed handler template unused import "models"
 
 ---
 

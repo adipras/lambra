@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -49,7 +50,8 @@ type ServiceStatus struct {
 	ServiceName string `json:"service_name"`
 	Status      string `json:"status"` // running, stopped, not_deployed
 	Port        int    `json:"port,omitempty"`
-	URL         string `json:"url,omitempty"`
+	URL         string `json:"url,omitempty"`          // External URL for frontend display (localhost)
+	InternalURL string `json:"internal_url,omitempty"` // Internal URL for backend testing (host.docker.internal)
 	StartedAt   string `json:"started_at,omitempty"`
 	Error       string `json:"error,omitempty"`
 }
@@ -61,6 +63,7 @@ type DeployResult struct {
 	ServiceName string `json:"service_name"`
 	Port        int    `json:"port"`
 	URL         string `json:"url"`
+	InternalURL string `json:"internal_url"`
 }
 
 // DeployProject generates code and deploys the service
@@ -120,6 +123,7 @@ func (s *DeploymentService) DeployProject(ctx context.Context, projectUUID strin
 		ServiceName: serviceName,
 		Port:        port,
 		URL:         fmt.Sprintf("http://localhost:%d", port),
+		InternalURL: fmt.Sprintf("http://host.docker.internal:%d", port),
 	}, nil
 }
 
@@ -149,6 +153,7 @@ func (s *DeploymentService) StartService(ctx context.Context, projectUUID string
 		Status:      "running",
 		Port:        port,
 		URL:         fmt.Sprintf("http://localhost:%d", port),
+		InternalURL: fmt.Sprintf("http://host.docker.internal:%d", port),
 		StartedAt:   time.Now().Format(time.RFC3339),
 	}, nil
 }
@@ -243,6 +248,7 @@ func (s *DeploymentService) RedeployService(ctx context.Context, projectUUID str
 		Status:      "running",
 		Port:        port,
 		URL:         fmt.Sprintf("http://localhost:%d", port),
+		InternalURL: fmt.Sprintf("http://host.docker.internal:%d", port),
 		StartedAt:   time.Now().Format(time.RFC3339),
 	}, nil
 }
@@ -279,9 +285,40 @@ func (s *DeploymentService) GetServiceStatus(ctx context.Context, projectUUID st
 	if status == "running" {
 		result.Port = port
 		result.URL = fmt.Sprintf("http://localhost:%d", port)
+		result.InternalURL = fmt.Sprintf("http://host.docker.internal:%d", port)
 	}
 
 	return result, nil
+}
+
+// DestroyServiceCompletely stops containers, removes volumes, and deletes the workspace directory
+func (s *DeploymentService) DestroyServiceCompletely(ctx context.Context, projectUUID string) error {
+	project, err := s.projectRepo.GetByUUID(projectUUID)
+	if err != nil {
+		return fmt.Errorf("failed to get project: %w", err)
+	}
+
+	serviceName := toKebabCase(project.Name)
+	serviceDir := filepath.Join(s.workspacePath, serviceName)
+
+	// Check if service directory exists
+	if _, err := os.Stat(serviceDir); os.IsNotExist(err) {
+		// Nothing to destroy
+		return nil
+	}
+
+	// Stop and remove containers with volumes
+	if err := s.destroyService(serviceDir); err != nil {
+		// Log but continue - containers might not exist
+		fmt.Printf("Warning: failed to destroy containers: %v\n", err)
+	}
+
+	// Remove workspace directory completely
+	if err := os.RemoveAll(serviceDir); err != nil {
+		return fmt.Errorf("failed to remove workspace directory: %w", err)
+	}
+
+	return nil
 }
 
 // Helper methods
@@ -331,42 +368,22 @@ func (s *DeploymentService) checkContainerStatus(serviceName string) string {
 
 func (s *DeploymentService) generateDockerFiles(project *models.Project, serviceDir string, port int) error {
 	serviceName := toKebabCase(project.Name)
-	dbPort := 3400 + int(project.ID%100) // Unique DB port
 
-	data := map[string]interface{}{
+	// Use project's database configuration (no MySQL container needed)
+	data := map[string]any{
 		"ServiceName":      serviceName,
 		"Port":             port,
-		"DatabaseName":     strings.ReplaceAll(serviceName, "-", "_") + "_db",
-		"DatabaseUser":     serviceName,
-		"DatabasePassword": serviceName + "_secret",
-		"DatabasePort":     dbPort,
+		"DBHost":           project.DBHost,
+		"DBPort":           project.DBPort,
+		"DBUser":           project.DBUser,
+		"DBPassword":       project.DBPassword,
+		"DBName":           project.DBName,
 		"Environment":      "development",
 		"GinMode":          "debug",
 	}
 
-	// Generate docker-compose.yml
+	// Generate docker-compose.yml (no MySQL container, connects to external DB)
 	dockerComposeTmpl := `services:
-  {{.ServiceName}}-db:
-    image: mysql:8.0
-    container_name: {{.ServiceName}}-db
-    environment:
-      MYSQL_ROOT_PASSWORD: root_password
-      MYSQL_DATABASE: {{.DatabaseName}}
-      MYSQL_USER: {{.DatabaseUser}}
-      MYSQL_PASSWORD: {{.DatabasePassword}}
-    ports:
-      - "{{.DatabasePort}}:3306"
-    volumes:
-      - {{.ServiceName}}_db_data:/var/lib/mysql
-      - ./migrations:/docker-entrypoint-initdb.d
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot_password"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - {{.ServiceName}}-network
-
   {{.ServiceName}}:
     build:
       context: .
@@ -378,20 +395,16 @@ func (s *DeploymentService) generateDockerFiles(project *models.Project, service
       PORT: {{.Port}}
       ENV: {{.Environment}}
       GIN_MODE: {{.GinMode}}
-      DB_HOST: {{.ServiceName}}-db
-      DB_PORT: 3306
-      DB_USER: {{.DatabaseUser}}
-      DB_PASSWORD: {{.DatabasePassword}}
-      DB_NAME: {{.DatabaseName}}
-    depends_on:
-      {{.ServiceName}}-db:
-        condition: service_healthy
+      DB_HOST: {{.DBHost}}
+      DB_PORT: {{.DBPort}}
+      DB_USER: {{.DBUser}}
+      DB_PASSWORD: {{.DBPassword}}
+      DB_NAME: {{.DBName}}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - {{.ServiceName}}-network
     restart: unless-stopped
-
-volumes:
-  {{.ServiceName}}_db_data:
 
 networks:
   {{.ServiceName}}-network:
@@ -461,10 +474,11 @@ require (
 		return err
 	}
 
-	// Build imports, initializations, and routes for each entity
+	// Build imports, initializations, routes, and migrations for each entity
 	var imports strings.Builder
 	var inits strings.Builder
 	var routes strings.Builder
+	var migrations strings.Builder
 
 	imports.WriteString(fmt.Sprintf("\t\"%s/repository\"\n", serviceName))
 	imports.WriteString(fmt.Sprintf("\t\"%s/service\"\n", serviceName))
@@ -479,6 +493,10 @@ require (
 		inits.WriteString(fmt.Sprintf("\t%sSvc := service.New%sService(%sRepo)\n", entityNameLower, entity.Name, entityNameLower))
 		inits.WriteString(fmt.Sprintf("\t%sHandler := handlers.New%sHandler(%sSvc)\n\n", entityNameLower, entity.Name, entityNameLower))
 
+		// Generate migration SQL for this entity
+		migrationSQL := s.generateMigrationSQL(entity)
+		migrations.WriteString(migrationSQL)
+
 		// Get endpoints for this entity
 		endpoints, err := s.endpointRepo.GetByEntityID(entity.ID)
 		if err != nil {
@@ -487,23 +505,26 @@ require (
 
 		// Generate routes for each endpoint
 		for _, endpoint := range endpoints {
+			// Convert endpoint name to valid Go method name (PascalCase, no spaces)
 			handlerMethod := toPascalCase(endpoint.Name)
 			routes.WriteString(fmt.Sprintf("\tr.%s(\"%s\", %sHandler.%s)\n",
 				endpoint.Method, endpoint.Path, entityNameLower, handlerMethod))
 		}
 
-		// Add default CRUD routes if no custom endpoints
+		// Add default CRUD routes if no endpoints exist
 		if len(endpoints) == 0 {
 			basePath := "/" + entityNameSnake + "s"
-			routes.WriteString(fmt.Sprintf("\tr.GET(\"%s\", %sHandler.GetAll)\n", basePath, entityNameLower))
-			routes.WriteString(fmt.Sprintf("\tr.GET(\"%s/:id\", %sHandler.GetByID)\n", basePath, entityNameLower))
-			routes.WriteString(fmt.Sprintf("\tr.POST(\"%s\", %sHandler.Create)\n", basePath, entityNameLower))
-			routes.WriteString(fmt.Sprintf("\tr.PUT(\"%s/:id\", %sHandler.Update)\n", basePath, entityNameLower))
-			routes.WriteString(fmt.Sprintf("\tr.DELETE(\"%s/:id\", %sHandler.Delete)\n", basePath, entityNameLower))
+			entityNamePascal := toPascalCase(entity.Name)
+			entityNamePlural := pluralize(entityNamePascal)
+			routes.WriteString(fmt.Sprintf("\tr.GET(\"%s\", %sHandler.List%s)\n", basePath, entityNameLower, entityNamePlural))
+			routes.WriteString(fmt.Sprintf("\tr.GET(\"%s/:id\", %sHandler.Get%s)\n", basePath, entityNameLower, entityNamePascal))
+			routes.WriteString(fmt.Sprintf("\tr.POST(\"%s\", %sHandler.Create%s)\n", basePath, entityNameLower, entityNamePascal))
+			routes.WriteString(fmt.Sprintf("\tr.PUT(\"%s/:id\", %sHandler.Update%s)\n", basePath, entityNameLower, entityNamePascal))
+			routes.WriteString(fmt.Sprintf("\tr.DELETE(\"%s/:id\", %sHandler.Delete%s)\n", basePath, entityNameLower, entityNamePascal))
 		}
 	}
 
-	// main.go
+	// main.go with auto-migration
 	mainGoContent := fmt.Sprintf(`package main
 
 import (
@@ -515,6 +536,19 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
 %s)
+
+// runMigrations creates tables if they don't exist
+func runMigrations(db *sqlx.DB) error {
+	migrations := []string{
+%s	}
+
+	for _, migration := range migrations {
+		if _, err := db.Exec(migration); err != nil {
+			return fmt.Errorf("migration failed: %%w", err)
+		}
+	}
+	return nil
+}
 
 func main() {
 	port := os.Getenv("PORT")
@@ -538,6 +572,12 @@ func main() {
 	defer db.Close()
 	log.Println("Database connected successfully")
 
+	// Run auto-migrations
+	if err := runMigrations(db); err != nil {
+		log.Fatalf("Failed to run migrations: %%v", err)
+	}
+	log.Println("Migrations completed successfully")
+
 	// Initialize repositories, services, and handlers
 %s
 	r := gin.Default()
@@ -557,7 +597,7 @@ func main() {
 		log.Fatal(err)
 	}
 }
-`, imports.String(), port, inits.String(), serviceName, routes.String())
+`, imports.String(), migrations.String(), port, inits.String(), serviceName, routes.String())
 
 	if err := os.WriteFile(filepath.Join(cmdDir, "main.go"), []byte(mainGoContent), 0644); err != nil {
 		return err
@@ -569,6 +609,78 @@ func main() {
 	cmd.Run() // Ignore error, it might fail without network
 
 	return nil
+}
+
+// generateMigrationSQL generates CREATE TABLE statement for an entity
+func (s *DeploymentService) generateMigrationSQL(entity models.Entity) string {
+	// Parse fields from JSON
+	var fields []models.EntityField
+	if err := json.Unmarshal(entity.Fields, &fields); err != nil {
+		return ""
+	}
+
+	var sql strings.Builder
+	tableName := entity.TableName
+
+	sql.WriteString(fmt.Sprintf("\t\t`CREATE TABLE IF NOT EXISTS %s (\n", tableName))
+	sql.WriteString("\t\t\tid BIGINT PRIMARY KEY AUTO_INCREMENT,\n")
+	sql.WriteString("\t\t\tuuid CHAR(36) NOT NULL UNIQUE,\n")
+
+	for _, field := range fields {
+		columnName := toSnakeCase(field.Name)
+		columnType := s.getSQLType(field.Type, field.Length)
+		notNull := ""
+		if field.Required {
+			notNull = " NOT NULL"
+		}
+		defaultVal := ""
+		if field.DefaultValue != "" {
+			defaultVal = fmt.Sprintf(" DEFAULT %s", field.DefaultValue)
+		}
+		sql.WriteString(fmt.Sprintf("\t\t\t%s %s%s%s,\n", columnName, columnType, notNull, defaultVal))
+	}
+
+	sql.WriteString("\t\t\tcreated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,\n")
+	sql.WriteString("\t\t\tupdated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n")
+	sql.WriteString("\t\t\tdeleted_at TIMESTAMP NULL DEFAULT NULL\n")
+	sql.WriteString("\t\t)`,\n")
+
+	// Add indexes
+	sql.WriteString(fmt.Sprintf("\t\t`CREATE INDEX IF NOT EXISTS idx_%s_uuid ON %s(uuid)`,\n", tableName, tableName))
+	sql.WriteString(fmt.Sprintf("\t\t`CREATE INDEX IF NOT EXISTS idx_%s_deleted_at ON %s(deleted_at)`,\n", tableName, tableName))
+
+	return sql.String()
+}
+
+// getSQLType converts field type to MySQL type
+func (s *DeploymentService) getSQLType(fieldType string, length int) string {
+	switch fieldType {
+	case "string":
+		if length > 0 {
+			return fmt.Sprintf("VARCHAR(%d)", length)
+		}
+		return "VARCHAR(255)"
+	case "text":
+		return "TEXT"
+	case "int", "integer":
+		return "INT"
+	case "int64", "bigint":
+		return "BIGINT"
+	case "float", "float32":
+		return "FLOAT"
+	case "float64", "double":
+		return "DOUBLE"
+	case "bool", "boolean":
+		return "BOOLEAN"
+	case "date":
+		return "DATE"
+	case "datetime", "timestamp":
+		return "DATETIME"
+	case "json":
+		return "JSON"
+	default:
+		return "VARCHAR(255)"
+	}
 }
 
 func toSnakeCase(s string) string {
@@ -587,6 +699,10 @@ func toSnakeCase(s string) string {
 }
 
 func toPascalCase(s string) string {
+	// If no delimiters (space, underscore, dash), assume already PascalCase
+	if !strings.ContainsAny(s, " _-") {
+		return s
+	}
 	words := strings.FieldsFunc(s, func(r rune) bool {
 		return r == ' ' || r == '_' || r == '-'
 	})
@@ -633,4 +749,15 @@ func toKebabCase(s string) string {
 		}
 	}
 	return string(result)
+}
+
+// pluralize converts a word to plural form
+func pluralize(s string) string {
+	if strings.HasSuffix(s, "y") {
+		return s[:len(s)-1] + "ies"
+	}
+	if strings.HasSuffix(s, "s") || strings.HasSuffix(s, "x") || strings.HasSuffix(s, "ch") || strings.HasSuffix(s, "sh") {
+		return s + "es"
+	}
+	return s + "s"
 }

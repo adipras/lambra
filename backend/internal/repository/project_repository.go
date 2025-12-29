@@ -34,10 +34,13 @@ func (r *ProjectRepository) Create(project *models.Project) error {
 	uuidStr := uuidV7.String()
 
 	query := `
-		INSERT INTO projects (id, uuid, name, description, status, namespace, created_by, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+		INSERT INTO projects (id, uuid, name, description, status, namespace,
+		                      db_host, db_port, db_user, db_password, db_name,
+		                      created_by, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
 	`
-	_, err := r.db.Exec(query, id, uuidStr, project.Name, project.Description, project.Status, project.Namespace, project.CreatedBy)
+	_, err := r.db.Exec(query, id, uuidStr, project.Name, project.Description, project.Status, project.Namespace,
+		project.DBHost, project.DBPort, project.DBUser, project.DBPassword, project.DBName, project.CreatedBy)
 	if err != nil {
 		return fmt.Errorf("failed to create project: %w", err)
 	}
@@ -57,6 +60,7 @@ func (r *ProjectRepository) GetByUUID(uuid string) (*models.Project, error) {
 	var project models.Project
 	query := `
 		SELECT id, uuid, name, description, status, namespace, git_repo_id,
+		       db_host, db_port, db_user, db_password, db_name,
 		       created_by, updated_by, deleted_by, created_at, updated_at, deleted_at
 		FROM projects
 		WHERE uuid = ? AND deleted_at IS NULL
@@ -78,6 +82,7 @@ func (r *ProjectRepository) GetByID(id int64) (*models.Project, error) {
 	var project models.Project
 	query := `
 		SELECT id, uuid, name, description, status, namespace, git_repo_id,
+		       db_host, db_port, db_user, db_password, db_name,
 		       created_by, updated_by, deleted_by, created_at, updated_at, deleted_at
 		FROM projects
 		WHERE id = ? AND deleted_at IS NULL
@@ -98,6 +103,7 @@ func (r *ProjectRepository) GetAll(limit, offset int) ([]models.Project, int64, 
 	var projects []models.Project
 	query := `
 		SELECT id, uuid, name, description, status, namespace, git_repo_id,
+		       db_host, db_port, db_user, db_password, db_name,
 		       created_by, updated_by, deleted_by, created_at, updated_at, deleted_at
 		FROM projects
 		WHERE deleted_at IS NULL
