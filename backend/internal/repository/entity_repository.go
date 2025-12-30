@@ -135,3 +135,13 @@ func (r *EntityRepository) DeleteByUUID(uuid string, deletedBy string) error {
 
 	return nil
 }
+
+// HardDeleteByProjectID permanently deletes all entities for a project
+func (r *EntityRepository) HardDeleteByProjectID(projectID int64) error {
+	query := `DELETE FROM entities WHERE project_id = ?`
+	_, err := r.db.Exec(query, projectID)
+	if err != nil {
+		return fmt.Errorf("failed to hard delete entities: %w", err)
+	}
+	return nil
+}

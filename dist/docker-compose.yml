@@ -1,0 +1,70 @@
+# Lambra - Microservices Generator
+# Quick Start: docker-compose up -d
+# Access: http://localhost:3000
+
+services:
+  # MySQL Database (internal for Lambra)
+  mysql:
+    image: mysql:8.0
+    container_name: lambra-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-lambra_root_secret}
+      MYSQL_DATABASE: lambra_db
+      MYSQL_USER: lambra
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-lambra_secret}
+    volumes:
+      - lambra_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lambra-network
+    restart: unless-stopped
+
+  # Backend API (internal, accessed via nginx)
+  backend:
+    image: lambra/backend:latest
+    container_name: lambra-backend
+    environment:
+      PORT: 8080
+      ENV: production
+      GIN_MODE: release
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: lambra
+      DB_PASSWORD: ${MYSQL_PASSWORD:-lambra_secret}
+      DB_NAME: lambra_db
+      WORKSPACE_PATH: /workspace
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - lambra_workspace:/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - lambra-network
+    restart: unless-stopped
+
+  # Frontend + Nginx Proxy (main entry point)
+  frontend:
+    image: lambra/frontend:latest
+    container_name: lambra-frontend
+    ports:
+      - "${LAMBRA_PORT:-3000}:80"
+    depends_on:
+      - backend
+    networks:
+      - lambra-network
+    restart: unless-stopped
+
+volumes:
+  lambra_mysql_data:
+  lambra_workspace:
+
+networks:
+  lambra-network:
+    driver: bridge

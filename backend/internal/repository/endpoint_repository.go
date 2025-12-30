@@ -172,3 +172,23 @@ func (r *EndpointRepository) DeleteByUUID(uuid string, deletedBy string) error {
 
 	return nil
 }
+
+// HardDeleteByEntityID permanently deletes all endpoints for an entity
+func (r *EndpointRepository) HardDeleteByEntityID(entityID int64) error {
+	query := `DELETE FROM endpoints WHERE entity_id = ?`
+	_, err := r.db.Exec(query, entityID)
+	if err != nil {
+		return fmt.Errorf("failed to hard delete endpoints: %w", err)
+	}
+	return nil
+}
+
+// HardDeleteByProjectID permanently deletes all endpoints for a project
+func (r *EndpointRepository) HardDeleteByProjectID(projectID int64) error {
+	query := `DELETE FROM endpoints WHERE project_id = ?`
+	_, err := r.db.Exec(query, projectID)
+	if err != nil {
+		return fmt.Errorf("failed to hard delete endpoints: %w", err)
+	}
+	return nil
+}

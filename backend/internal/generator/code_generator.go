@@ -143,10 +143,13 @@ func (g *CodeGenerator) PrepareContext(project *models.Project, entity *models.E
 	// Generate module name from project name (kebab-case)
 	moduleName := toKebabCase(project.Name)
 
+	// Ensure EntityName is PascalCase (e.g., "product" -> "Product")
+	entityNamePascal := toPascalCase(entity.Name)
+
 	ctx := &GenerateContext{
 		Project:      project,
 		Entity:       entity,
-		EntityName:   entity.Name,
+		EntityName:   entityNamePascal,
 		EntityNameLC: toCamelCase(entity.Name),
 		TableName:    entity.TableName,
 		PackageName:  "models",

@@ -189,9 +189,10 @@ export const ServiceDetail = () => {
   const destroyMutation = useMutation({
     mutationFn: () => deploymentApi.destroy(id),
     onSuccess: () => {
-      showNotification('success', 'Service destroyed successfully')
-      setShowDeleteModal(false)
-      refetchStatus()
+      // Invalidate projects query cache
+      queryClient.invalidateQueries(['projects'])
+      // Navigate to services list since project is deleted
+      navigate('/services', { replace: true })
     },
     onError: (error) => {
       showNotification('error', error.response?.data?.message || 'Failed to destroy service')
@@ -293,74 +294,97 @@ export const ServiceDetail = () => {
           </div>
         </div>
 
-        {/* Action Buttons - Reorganized */}
-        <div className="flex items-center gap-3">
-          {/* Status Badge */}
-          <div className={`flex items-center gap-2 px-4 py-2 rounded-xl ${
+        {/* Action Buttons - Clean Layout */}
+        <div className="flex items-center gap-2">
+          {/* Status Indicator */}
+          <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${
             deploymentStatus?.status === 'running'
-              ? 'bg-green-50 border border-green-200'
+              ? 'bg-green-100 text-green-700'
               : deploymentStatus?.status === 'stopped'
-              ? 'bg-yellow-50 border border-yellow-200'
-              : 'bg-gray-50 border border-gray-200'
+              ? 'bg-amber-100 text-amber-700'
+              : 'bg-gray-100 text-gray-600'
           }`}>
-            <div className={`w-2.5 h-2.5 rounded-full ${
+            <div className={`w-2 h-2 rounded-full ${
               deploymentStatus?.status === 'running' ? 'bg-green-500 animate-pulse' :
-              deploymentStatus?.status === 'stopped' ? 'bg-yellow-500' : 'bg-gray-400'
+              deploymentStatus?.status === 'stopped' ? 'bg-amber-500' : 'bg-gray-400'
             }`} />
-            <span className="text-sm font-medium capitalize">
+            <span className="capitalize">
               {deploymentStatus?.status || 'Not Deployed'}
             </span>
-            {deploymentStatus?.url && deploymentStatus?.status === 'running' && (
+          </div>
+
+          {/* Divider */}
+          <div className="h-8 w-px bg-gray-200" />
+
+          {/* Button Group */}
+          <div className="flex items-center bg-gray-100 rounded-lg p-1 gap-1">
+            {/* Primary Action */}
+            {deploymentStatus?.status === 'running' ? (
+              <button
+                onClick={() => stopMutation.mutate()}
+                disabled={isStopping || isRedeploying}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-md text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                {isStopping ? <LoadingSpinner size="sm" /> : <Square className="w-3.5 h-3.5" />}
+                <span>Stop</span>
+              </button>
+            ) : deploymentStatus?.status === 'stopped' ? (
+              <button
+                onClick={() => startMutation.mutate()}
+                disabled={isStarting || isRedeploying}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500 hover:bg-green-600 text-white rounded-md text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                {isStarting ? <LoadingSpinner size="sm" /> : <Play className="w-3.5 h-3.5" />}
+                <span>Start</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => deployMutation.mutate()}
+                disabled={isDeploying || entities.length === 0}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-sm font-medium transition-colors disabled:opacity-50"
+                title={entities.length === 0 ? 'Add at least one entity first' : 'Deploy to Docker'}
+              >
+                {isDeploying ? <LoadingSpinner size="sm" /> : <Rocket className="w-3.5 h-3.5" />}
+                <span>Deploy</span>
+              </button>
+            )}
+
+            {/* Open URL - only when running */}
+            {deploymentStatus?.status === 'running' && deploymentStatus?.url && (
               <a
                 href={deploymentStatus.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-green-600 hover:text-green-700 ml-1"
-                title="Open in browser"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 rounded-md text-sm font-medium transition-colors border border-gray-200"
+                title="Open service URL"
               >
-                <ExternalLink className="w-4 h-4" />
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Open</span>
               </a>
+            )}
+
+            {/* Redeploy - only when deployed */}
+            {(deploymentStatus?.status === 'running' || deploymentStatus?.status === 'stopped') && (
+              <button
+                onClick={() => redeployMutation.mutate()}
+                disabled={isRedeploying}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-50 text-gray-700 rounded-md text-sm font-medium transition-colors border border-gray-200 disabled:opacity-50"
+                title="Regenerate code and rebuild"
+              >
+                {isRedeploying ? <LoadingSpinner size="sm" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                <span>Redeploy</span>
+              </button>
             )}
           </div>
 
-          {/* Primary Action Button */}
-          {deploymentStatus?.status === 'running' ? (
-            <button
-              onClick={() => stopMutation.mutate()}
-              disabled={isStopping || isRedeploying}
-              className="btn bg-red-500 hover:bg-red-600 text-white"
-            >
-              {isStopping ? <LoadingSpinner size="sm" /> : <Square className="w-4 h-4 mr-1.5" />}
-              Stop
-            </button>
-          ) : deploymentStatus?.status === 'stopped' ? (
-            <button
-              onClick={() => startMutation.mutate()}
-              disabled={isStarting || isRedeploying}
-              className="btn bg-green-500 hover:bg-green-600 text-white"
-            >
-              {isStarting ? <LoadingSpinner size="sm" /> : <Play className="w-4 h-4 mr-1.5" />}
-              Start
-            </button>
-          ) : (
-            <button
-              onClick={() => deployMutation.mutate()}
-              disabled={isDeploying || entities.length === 0}
-              className="btn bg-indigo-600 hover:bg-indigo-700 text-white"
-              title={entities.length === 0 ? 'Add at least one entity first' : ''}
-            >
-              {isDeploying ? <LoadingSpinner size="sm" /> : <Rocket className="w-4 h-4 mr-1.5" />}
-              Deploy
-            </button>
-          )}
-
-          {/* Actions Dropdown Menu */}
+          {/* More Actions */}
           <div className="relative">
             <button
               onClick={() => setShowActionsMenu(!showActionsMenu)}
-              className="btn btn-secondary"
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              title="More actions"
             >
-              <MoreVertical className="w-4 h-4" />
+              <MoreVertical className="w-5 h-5 text-gray-500" />
             </button>
             {showActionsMenu && (
               <>
@@ -368,74 +392,48 @@ export const ServiceDetail = () => {
                   className="fixed inset-0 z-10"
                   onClick={() => setShowActionsMenu(false)}
                 />
-                <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-gray-200 py-2 z-20">
+                <div className="absolute right-0 mt-2 w-52 bg-white rounded-lg shadow-lg border border-gray-200 py-1.5 z-20">
                   {/* Refresh Status */}
                   <button
                     onClick={() => { refetchStatus(); setShowActionsMenu(false) }}
-                    className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50 flex items-center gap-3"
+                    className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2.5"
                   >
-                    <RefreshCw className="w-4 h-4 text-gray-500" />
+                    <RefreshCw className="w-4 h-4 text-gray-400" />
                     <span>Refresh Status</span>
                   </button>
 
-                  {/* Redeploy - only show if deployed */}
-                  {(deploymentStatus?.status === 'running' || deploymentStatus?.status === 'stopped') && (
-                    <button
-                      onClick={() => { redeployMutation.mutate(); setShowActionsMenu(false) }}
-                      disabled={isRedeploying}
-                      className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50 flex items-center gap-3"
-                    >
-                      {isRedeploying ? (
-                        <LoadingSpinner size="sm" />
-                      ) : (
-                        <RefreshCw className="w-4 h-4 text-orange-500" />
-                      )}
-                      <span>Redeploy Service</span>
-                    </button>
-                  )}
-
-                  <div className="border-t border-gray-100 my-2" />
+                  <div className="border-t border-gray-100 my-1.5" />
 
                   {/* Export Options */}
+                  <div className="px-3 py-1.5">
+                    <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">Export</span>
+                  </div>
                   <button
                     onClick={() => { handleExportOpenAPI(); setShowActionsMenu(false) }}
                     disabled={isExporting || entities.length === 0}
-                    className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50 flex items-center gap-3 disabled:opacity-50"
+                    className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2.5 disabled:opacity-50"
                   >
-                    <FileJson className="w-4 h-4 text-blue-600" />
-                    <div>
-                      <div className="font-medium">Export OpenAPI</div>
-                      <div className="text-xs text-gray-500">Swagger/OpenAPI 3.0</div>
-                    </div>
+                    <FileJson className="w-4 h-4 text-blue-500" />
+                    <span>OpenAPI Spec</span>
                   </button>
                   <button
                     onClick={() => { handleExportPostman(); setShowActionsMenu(false) }}
                     disabled={isExporting || entities.length === 0}
-                    className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50 flex items-center gap-3 disabled:opacity-50"
+                    className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2.5 disabled:opacity-50"
                   >
-                    <FileJson className="w-4 h-4 text-orange-600" />
-                    <div>
-                      <div className="font-medium">Export Postman</div>
-                      <div className="text-xs text-gray-500">Postman Collection</div>
-                    </div>
+                    <FileJson className="w-4 h-4 text-orange-500" />
+                    <span>Postman Collection</span>
                   </button>
 
-                  {/* Delete - only show if service was deployed */}
-                  {(deploymentStatus?.status === 'running' || deploymentStatus?.status === 'stopped') && (
-                    <>
-                      <div className="border-t border-gray-100 my-2" />
-                      <button
-                        onClick={() => { setShowDeleteModal(true); setShowActionsMenu(false) }}
-                        className="w-full px-4 py-2.5 text-left text-sm hover:bg-red-50 flex items-center gap-3 text-red-600"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        <div>
-                          <div className="font-medium">Delete Service</div>
-                          <div className="text-xs text-red-400">Remove containers & files</div>
-                        </div>
-                      </button>
-                    </>
-                  )}
+                  {/* Delete - always available */}
+                  <div className="border-t border-gray-100 my-1.5" />
+                  <button
+                    onClick={() => { setShowDeleteModal(true); setShowActionsMenu(false) }}
+                    className="w-full px-3 py-2 text-left text-sm hover:bg-red-50 flex items-center gap-2.5 text-red-600"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>Delete Project</span>
+                  </button>
                 </div>
               </>
             )}

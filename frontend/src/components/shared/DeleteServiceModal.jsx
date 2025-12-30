@@ -32,7 +32,7 @@ export const DeleteServiceModal = ({
               <AlertTriangle className="w-6 h-6 text-red-600" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-red-900">Delete Service</h2>
+              <h2 className="text-lg font-bold text-red-900">Delete Project</h2>
               <p className="text-sm text-red-700">This action cannot be undone</p>
             </div>
           </div>
@@ -43,31 +43,34 @@ export const DeleteServiceModal = ({
           {step === 1 ? (
             <div className="space-y-4">
               <p className="text-gray-700">
-                You are about to permanently delete the service:
+                You are about to permanently delete the project:
               </p>
               <div className="p-4 bg-gray-100 rounded-xl">
                 <p className="font-bold text-gray-900 text-lg">{serviceName}</p>
               </div>
-              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
-                <h4 className="font-semibold text-yellow-800 mb-2">This will permanently delete:</h4>
-                <ul className="text-sm text-yellow-700 space-y-1.5">
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                <h4 className="font-semibold text-red-800 mb-2">This will permanently delete:</h4>
+                <ul className="text-sm text-red-700 space-y-1.5">
                   <li className="flex items-start gap-2">
-                    <span className="text-yellow-600 mt-0.5">-</span>
-                    <span>All Docker containers and volumes for this service</span>
+                    <span className="text-red-500 mt-0.5">•</span>
+                    <span>All Docker containers and volumes</span>
                   </li>
                   <li className="flex items-start gap-2">
-                    <span className="text-yellow-600 mt-0.5">-</span>
-                    <span>Generated source code in the workspace directory</span>
+                    <span className="text-red-500 mt-0.5">•</span>
+                    <span>Generated source code and workspace files</span>
                   </li>
                   <li className="flex items-start gap-2">
-                    <span className="text-yellow-600 mt-0.5">-</span>
-                    <span>All deployment configurations and logs</span>
+                    <span className="text-red-500 mt-0.5">•</span>
+                    <span>Project definition (all entities and endpoints)</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-red-500 mt-0.5">•</span>
+                    <span>All data from database</span>
                   </li>
                 </ul>
               </div>
-              <p className="text-sm text-gray-500">
-                Note: The project definition (entities, endpoints) will remain in the database.
-                You can redeploy at any time.
+              <p className="text-sm text-gray-600 bg-gray-100 p-3 rounded-lg">
+                ⚠️ This action is <strong>irreversible</strong>. You will need to recreate the project from scratch.
               </p>
             </div>
           ) : (

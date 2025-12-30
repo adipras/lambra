@@ -291,7 +291,7 @@ func (s *DeploymentService) GetServiceStatus(ctx context.Context, projectUUID st
 	return result, nil
 }
 
-// DestroyServiceCompletely stops containers, removes volumes, and deletes the workspace directory
+// DestroyServiceCompletely stops containers, removes volumes, deletes workspace, and removes from database
 func (s *DeploymentService) DestroyServiceCompletely(ctx context.Context, projectUUID string) error {
 	project, err := s.projectRepo.GetByUUID(projectUUID)
 	if err != nil {
@@ -301,21 +301,32 @@ func (s *DeploymentService) DestroyServiceCompletely(ctx context.Context, projec
 	serviceName := toKebabCase(project.Name)
 	serviceDir := filepath.Join(s.workspacePath, serviceName)
 
-	// Check if service directory exists
-	if _, err := os.Stat(serviceDir); os.IsNotExist(err) {
-		// Nothing to destroy
-		return nil
+	// 1. Stop and remove Docker containers with volumes (if service directory exists)
+	if _, err := os.Stat(serviceDir); err == nil {
+		if err := s.destroyService(serviceDir); err != nil {
+			// Log but continue - containers might not exist
+			fmt.Printf("Warning: failed to destroy containers: %v\n", err)
+		}
+
+		// 2. Remove workspace directory completely
+		if err := os.RemoveAll(serviceDir); err != nil {
+			fmt.Printf("Warning: failed to remove workspace directory: %v\n", err)
+		}
 	}
 
-	// Stop and remove containers with volumes
-	if err := s.destroyService(serviceDir); err != nil {
-		// Log but continue - containers might not exist
-		fmt.Printf("Warning: failed to destroy containers: %v\n", err)
+	// 3. Delete all endpoints for this project from database
+	if err := s.endpointRepo.HardDeleteByProjectID(project.ID); err != nil {
+		fmt.Printf("Warning: failed to delete endpoints: %v\n", err)
 	}
 
-	// Remove workspace directory completely
-	if err := os.RemoveAll(serviceDir); err != nil {
-		return fmt.Errorf("failed to remove workspace directory: %w", err)
+	// 4. Delete all entities for this project from database
+	if err := s.entityRepo.HardDeleteByProjectID(project.ID); err != nil {
+		fmt.Printf("Warning: failed to delete entities: %v\n", err)
+	}
+
+	// 5. Delete the project from database
+	if err := s.projectRepo.HardDeleteByUUID(projectUUID); err != nil {
+		return fmt.Errorf("failed to delete project from database: %w", err)
 	}
 
 	return nil
@@ -485,13 +496,15 @@ require (
 	imports.WriteString(fmt.Sprintf("\t\"%s/api/handlers\"\n", serviceName))
 
 	for _, entity := range entities {
-		entityNameLower := strings.ToLower(entity.Name[:1]) + entity.Name[1:]
+		// Ensure entity name is PascalCase for type names
+		entityNamePascal := toPascalCase(entity.Name)
+		entityNameLower := strings.ToLower(entityNamePascal[:1]) + entityNamePascal[1:]
 		entityNameSnake := toSnakeCase(entity.Name)
 
 		// Repository, Service, Handler initialization
-		inits.WriteString(fmt.Sprintf("\t%sRepo := repository.New%sRepository(db)\n", entityNameLower, entity.Name))
-		inits.WriteString(fmt.Sprintf("\t%sSvc := service.New%sService(%sRepo)\n", entityNameLower, entity.Name, entityNameLower))
-		inits.WriteString(fmt.Sprintf("\t%sHandler := handlers.New%sHandler(%sSvc)\n\n", entityNameLower, entity.Name, entityNameLower))
+		inits.WriteString(fmt.Sprintf("\t%sRepo := repository.New%sRepository(db)\n", entityNameLower, entityNamePascal))
+		inits.WriteString(fmt.Sprintf("\t%sSvc := service.New%sService(%sRepo)\n", entityNameLower, entityNamePascal, entityNameLower))
+		inits.WriteString(fmt.Sprintf("\t%sHandler := handlers.New%sHandler(%sSvc)\n\n", entityNameLower, entityNamePascal, entityNameLower))
 
 		// Generate migration SQL for this entity
 		migrationSQL := s.generateMigrationSQL(entity)
@@ -514,7 +527,6 @@ require (
 		// Add default CRUD routes if no endpoints exist
 		if len(endpoints) == 0 {
 			basePath := "/" + entityNameSnake + "s"
-			entityNamePascal := toPascalCase(entity.Name)
 			entityNamePlural := pluralize(entityNamePascal)
 			routes.WriteString(fmt.Sprintf("\tr.GET(\"%s\", %sHandler.List%s)\n", basePath, entityNameLower, entityNamePlural))
 			routes.WriteString(fmt.Sprintf("\tr.GET(\"%s/:id\", %sHandler.Get%s)\n", basePath, entityNameLower, entityNamePascal))
@@ -642,12 +654,10 @@ func (s *DeploymentService) generateMigrationSQL(entity models.Entity) string {
 
 	sql.WriteString("\t\t\tcreated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,\n")
 	sql.WriteString("\t\t\tupdated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n")
-	sql.WriteString("\t\t\tdeleted_at TIMESTAMP NULL DEFAULT NULL\n")
+	sql.WriteString("\t\t\tdeleted_at TIMESTAMP NULL DEFAULT NULL,\n")
+	sql.WriteString(fmt.Sprintf("\t\t\tINDEX idx_%s_uuid (uuid),\n", tableName))
+	sql.WriteString(fmt.Sprintf("\t\t\tINDEX idx_%s_deleted_at (deleted_at)\n", tableName))
 	sql.WriteString("\t\t)`,\n")
-
-	// Add indexes
-	sql.WriteString(fmt.Sprintf("\t\t`CREATE INDEX IF NOT EXISTS idx_%s_uuid ON %s(uuid)`,\n", tableName, tableName))
-	sql.WriteString(fmt.Sprintf("\t\t`CREATE INDEX IF NOT EXISTS idx_%s_deleted_at ON %s(deleted_at)`,\n", tableName, tableName))
 
 	return sql.String()
 }
@@ -699,9 +709,12 @@ func toSnakeCase(s string) string {
 }
 
 func toPascalCase(s string) string {
-	// If no delimiters (space, underscore, dash), assume already PascalCase
-	if !strings.ContainsAny(s, " _-") {
+	if s == "" {
 		return s
+	}
+	// If no delimiters (space, underscore, dash), just capitalize first letter
+	if !strings.ContainsAny(s, " _-") {
+		return strings.ToUpper(s[:1]) + s[1:]
 	}
 	words := strings.FieldsFunc(s, func(r rune) bool {
 		return r == ' ' || r == '_' || r == '-'

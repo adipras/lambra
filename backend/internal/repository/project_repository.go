@@ -161,6 +161,16 @@ func (r *ProjectRepository) DeleteByUUID(uuid string, deletedBy string) error {
 	return nil
 }
 
+// HardDeleteByUUID permanently deletes a project by UUID
+func (r *ProjectRepository) HardDeleteByUUID(uuid string) error {
+	query := `DELETE FROM projects WHERE uuid = ?`
+	_, err := r.db.Exec(query, uuid)
+	if err != nil {
+		return fmt.Errorf("failed to hard delete project: %w", err)
+	}
+	return nil
+}
+
 func (r *ProjectRepository) GetWithGitRepoByUUID(uuid string) (*models.ProjectWithRelations, error) {
 	project, err := r.GetByUUID(uuid)
 	if err != nil {

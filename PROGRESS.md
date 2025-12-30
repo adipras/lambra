@@ -1480,7 +1480,7 @@ curl -X POST http://localhost:8080/api/v1/projects \
 
 ---
 
-**Last Review:** 2025-12-29 (Phase 3.6 - DB Config, Auto-Migration, Endpoint Testing)
+**Last Review:** 2025-12-30 (Phase 3.7 - Bug Fixes & Docker Distribution)
 **Next Review:** Phase 2.3 - GitLab Integration or Phase 4 - Testing Features
 **Maintained By:** Development Team
 
@@ -1514,9 +1514,19 @@ curl -X POST http://localhost:8080/api/v1/projects \
   - Endpoint testing UI (ExampleBody, TestEndpointModal)
   - Delete service with 2-step confirmation
   - Reorganized action buttons with dropdown menu
-- ⏳ TODO: Deploy button masih belum rapih
+- ✅ Phase 3.7 - Bug Fixes & Docker Distribution (2025-12-30)
+  - Deploy button UI cleanup (button group layout)
+  - Delete Project now removes: Docker containers + Workspace + Database data
+  - Fixed toPascalCase() - now capitalizes first letter for single words
+  - Fixed MySQL CREATE INDEX syntax (moved indexes inside CREATE TABLE)
+  - Fixed endpoint names case (ListProducts instead of Listproducts)
+  - Added HardDelete methods to repositories for complete data removal
+  - Created Docker distribution files (dist/docker-compose.yml, README.md)
+  - Added nginx proxy for API requests in production frontend
+  - Created build-images.sh script for Docker image publishing
 - ⏳ Optional: GitLab Integration (Phase 2.3)
-- ⏳ Next: Phase 4 - Testing & Deployment Features
+- ⏳ Next: Phase 4 - Testing & Deployment Features (Snapshot, Logs, Multi-env)
+- ⏳ Optional: Build & publish Docker images to registry
 - Docker services: MySQL on port 3307 (to avoid WSL conflict)
 
 ---
