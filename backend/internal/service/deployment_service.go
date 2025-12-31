@@ -21,6 +21,7 @@ type DeploymentService struct {
 	projectRepo    *repository.ProjectRepository
 	entityRepo     *repository.EntityRepository
 	endpointRepo   *repository.EndpointRepository
+	snapshotRepo   *repository.SnapshotRepository
 	generatorSvc   *GeneratorService
 	workspacePath  string
 	basePort       int
@@ -31,6 +32,7 @@ func NewDeploymentService(
 	projectRepo *repository.ProjectRepository,
 	entityRepo *repository.EntityRepository,
 	endpointRepo *repository.EndpointRepository,
+	snapshotRepo *repository.SnapshotRepository,
 	generatorSvc *GeneratorService,
 	workspacePath string,
 ) *DeploymentService {
@@ -38,6 +40,7 @@ func NewDeploymentService(
 		projectRepo:   projectRepo,
 		entityRepo:    entityRepo,
 		endpointRepo:  endpointRepo,
+		snapshotRepo:  snapshotRepo,
 		generatorSvc:  generatorSvc,
 		workspacePath: workspacePath,
 		basePort:      9000, // Generated services start from port 9000
@@ -72,6 +75,15 @@ func (s *DeploymentService) DeployProject(ctx context.Context, projectUUID strin
 	project, err := s.projectRepo.GetByUUID(projectUUID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get project: %w", err)
+	}
+
+	// Auto-create snapshot before deployment
+	snapshot, err := s.createSnapshot(project)
+	if err != nil {
+		// Log warning but continue with deployment
+		fmt.Printf("Warning: failed to create snapshot: %v\n", err)
+	} else {
+		fmt.Printf("Snapshot created: %s (version %s)\n", snapshot.UUID, snapshot.Version)
 	}
 
 	serviceName := toKebabCase(project.Name)
@@ -330,6 +342,86 @@ func (s *DeploymentService) DestroyServiceCompletely(ctx context.Context, projec
 	}
 
 	return nil
+}
+
+// createSnapshot creates a snapshot of the current project state before deployment
+func (s *DeploymentService) createSnapshot(project *models.Project) (*models.GenerationSnapshot, error) {
+	// Get all entities for the project
+	entities, err := s.entityRepo.GetByProjectID(project.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get entities: %w", err)
+	}
+
+	// Get all endpoints for each entity
+	var allEndpoints []models.Endpoint
+	for _, entity := range entities {
+		endpoints, err := s.endpointRepo.GetByEntityID(entity.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get endpoints for entity %s: %w", entity.Name, err)
+		}
+		allEndpoints = append(allEndpoints, endpoints...)
+	}
+
+	// Create snapshot metadata
+	metadata := models.SnapshotMetadata{
+		Entities:  entities,
+		Endpoints: allEndpoints,
+		Config: map[string]interface{}{
+			"namespace": project.Namespace,
+			"db_host":   project.DBHost,
+			"db_port":   project.DBPort,
+			"db_user":   project.DBUser,
+			"db_name":   project.DBName,
+		},
+	}
+
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	// Create database snapshot info
+	dbSnapshot := models.DatabaseSnapshotInfo{
+		MigrationVersion:  fmt.Sprintf("v%s", time.Now().Format("20060102150405")),
+		AppliedMigrations: []string{},
+	}
+
+	dbSnapshotJSON, err := json.Marshal(dbSnapshot)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal database snapshot: %w", err)
+	}
+
+	// Count existing snapshots for version numbering
+	count, err := s.snapshotRepo.CountByProjectID(project.ID)
+	if err != nil {
+		count = 0
+	}
+
+	// Generate version
+	version := fmt.Sprintf("v1.%d.0", count+1)
+
+	// Deactivate previous active snapshot
+	if err := s.snapshotRepo.SetAllInactiveByProjectID(project.ID, "deployment"); err != nil {
+		fmt.Printf("Warning: failed to deactivate old snapshots: %v\n", err)
+	}
+
+	// Create snapshot
+	snapshot := &models.GenerationSnapshot{
+		ProjectID:        project.ID,
+		Version:          version,
+		GitCommitHash:    fmt.Sprintf("deploy-%d", time.Now().Unix()),
+		Metadata:         metadataJSON,
+		DatabaseSnapshot: dbSnapshotJSON,
+		Status:           models.SnapshotStatusActive,
+	}
+	snapshot.CreatedBy.String = "deployment"
+	snapshot.CreatedBy.Valid = true
+
+	if err := s.snapshotRepo.Create(snapshot); err != nil {
+		return nil, fmt.Errorf("failed to create snapshot: %w", err)
+	}
+
+	return snapshot, nil
 }
 
 // Helper methods

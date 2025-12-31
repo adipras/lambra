@@ -21,6 +21,7 @@ import { CodeEditor } from '../components/code/CodeEditor'
 import { ExampleBody } from '../components/shared/ExampleBody'
 import { TestEndpointModal } from '../components/shared/TestEndpointModal'
 import { DeleteServiceModal } from '../components/shared/DeleteServiceModal'
+import { SnapshotList } from '../components/deployment/SnapshotList'
 
 export const ServiceDetail = () => {
   const { id } = useParams()
@@ -555,6 +556,11 @@ export const ServiceDetail = () => {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Snapshots Section */}
+      <div className="mt-8">
+        <SnapshotList projectId={id} onNotification={showNotification} />
       </div>
 
       {/* Entity Modal */}

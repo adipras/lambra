@@ -1,9 +1,9 @@
 # Lambra - Progress Tracker
 
-> **Last Updated:** 2025-12-29 (DB Config, Auto-Migration, Endpoint Testing, Delete Service)
-> **Current Phase:** Phase 3.6 - Database & Deployment Enhancement (100% Complete ✅)
-> **Next Phase:** Phase 2.3 - GitLab Integration (Optional) or Phase 4 - Testing & Deployment Features
-> **Overall Progress:** 88% (Phase 1 + Phase 1.5 + Phase 2.1 + Phase 2.2 + Phase 2.4 + Phase 3 + Phase 3.5 + Phase 3.6 complete)
+> **Last Updated:** 2025-12-31 (Phase 4.1 - Snapshot & Rollback System)
+> **Current Phase:** Phase 4.1 - Snapshot & Rollback (100% Complete ✅)
+> **Next Phase:** Phase 4.2 - Deployment Logs & Container Log Streaming
+> **Overall Progress:** 92% (Phase 1 + 1.5 + 2.1 + 2.2 + 2.4 + 3 + 3.5 + 3.6 + 4.1 complete)
 
 ---
 
@@ -1475,13 +1475,14 @@ curl -X POST http://localhost:8080/api/v1/projects \
 | 1.4.0 | 2025-12-23 | Phase 3 | UI Enhancement - CodeEditor, EndpointDetail, Export ✅ |
 | 1.5.0 | 2025-12-29 | Phase 3.5 | Auto-Generate CRUD Endpoints & Schema Generation ✅ |
 | 1.6.0 | 2025-12-29 | Phase 3.6 | DB Config, Auto-Migration, Endpoint Testing, Delete Service ✅ |
-| 1.7.0 | TBD | Phase 2.3 | GitLab integration (optional) |
-| 1.8.0 | TBD | Phase 4 | Testing & deployment features (pending) |
+| 1.7.0 | 2025-12-31 | Phase 4.1 | Snapshot System & Rollback (50% Phase 4) ✅ |
+| 1.8.0 | TBD | Phase 4.2 | Deployment Logs & SSE Streaming (pending) |
+| 1.9.0 | TBD | Phase 2.3 | GitLab integration (optional) |
 
 ---
 
-**Last Review:** 2025-12-30 (Phase 3.7 - Bug Fixes & Docker Distribution)
-**Next Review:** Phase 2.3 - GitLab Integration or Phase 4 - Testing Features
+**Last Review:** 2025-12-31 (Phase 4.1 - Snapshot & Rollback System)
+**Next Review:** Phase 4.2 - Deployment Logs & Container Log Streaming
 **Maintained By:** Development Team
 
 **Note for Next Session:**
@@ -1524,8 +1525,22 @@ curl -X POST http://localhost:8080/api/v1/projects \
   - Created Docker distribution files (dist/docker-compose.yml, README.md)
   - Added nginx proxy for API requests in production frontend
   - Created build-images.sh script for Docker image publishing
+- ✅ Phase 4.1 - Snapshot & Rollback System (2025-12-31)
+  - Created SnapshotRepository with full CRUD operations
+  - Created SnapshotService with CreateSnapshot, RollbackToSnapshot methods
+  - Created SnapshotHandler with API endpoints
+  - API Routes: GET/POST /projects/:id/snapshots, GET/POST/DELETE /snapshots/:id
+  - Updated DeploymentService to auto-create snapshot before deploy
+  - Frontend: SnapshotList component with rollback confirmation
+  - Frontend: snapshots.js API client
+  - Full rollback: restores entities/endpoints from snapshot and redeploys
+- ⏳ Phase 4.2 - Deployment Logs (Next)
+  - [ ] Create DeploymentRepository
+  - [ ] Update Deployment model with UUID
+  - [ ] Add logging during deploy process
+  - [ ] Container logs with SSE streaming
+  - [ ] Frontend LogViewer component
 - ⏳ Optional: GitLab Integration (Phase 2.3)
-- ⏳ Next: Phase 4 - Testing & Deployment Features (Snapshot, Logs, Multi-env)
 - ⏳ Optional: Build & publish Docker images to registry
 - Docker services: MySQL on port 3307 (to avoid WSL conflict)
 

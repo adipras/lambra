@@ -28,14 +28,16 @@ func Setup(db *sqlx.DB) *gin.Engine {
 	projectRepo := repository.NewProjectRepository(db)
 	entityRepo := repository.NewEntityRepository(db)
 	endpointRepo := repository.NewEndpointRepository(db)
+	snapshotRepo := repository.NewSnapshotRepository(db)
 
 	// Initialize services
 	projectService := service.NewProjectService(projectRepo)
 	entityService := service.NewEntityService(entityRepo, projectRepo, endpointRepo)
 	endpointService := service.NewEndpointService(endpointRepo, entityRepo, projectRepo)
 	generatorService := service.NewGeneratorService(projectRepo, entityRepo, endpointRepo)
-	deploymentService := service.NewDeploymentService(projectRepo, entityRepo, endpointRepo, generatorService, workspacePath)
+	deploymentService := service.NewDeploymentService(projectRepo, entityRepo, endpointRepo, snapshotRepo, generatorService, workspacePath)
 	exportService := service.NewExportService(projectRepo, entityRepo, endpointRepo)
+	snapshotService := service.NewSnapshotService(snapshotRepo, projectRepo, entityRepo, endpointRepo)
 
 	// Initialize handlers
 	healthHandler := handlers.NewHealthHandler(db)
@@ -45,6 +47,7 @@ func Setup(db *sqlx.DB) *gin.Engine {
 	generatorHandler := handlers.NewGeneratorHandler(generatorService)
 	deploymentHandler := handlers.NewDeploymentHandler(deploymentService)
 	exportHandler := handlers.NewExportHandler(exportService)
+	snapshotHandler := handlers.NewSnapshotHandler(snapshotService, deploymentService)
 
 	// Health check routes
 	router.GET("/health", healthHandler.HealthCheck)
@@ -78,6 +81,10 @@ func Setup(db *sqlx.DB) *gin.Engine {
 			// Export routes
 			projects.GET("/:id/export/openapi", exportHandler.ExportOpenAPI)
 			projects.GET("/:id/export/postman", exportHandler.ExportPostman)
+
+			// Snapshot routes (under projects)
+			projects.GET("/:id/snapshots", snapshotHandler.ListByProject)
+			projects.POST("/:id/snapshots", snapshotHandler.Create)
 		}
 
 		// Entities
@@ -108,19 +115,21 @@ func Setup(db *sqlx.DB) *gin.Engine {
 			generate.GET("/files/:id", generatorHandler.GetGeneratedFilesList)
 		}
 
-		// Deployments (will be implemented in Phase 4)
+		// Snapshots
+		snapshots := v1.Group("/snapshots")
+		{
+			snapshots.GET("/:id", snapshotHandler.Get)
+			snapshots.GET("/:id/metadata", snapshotHandler.GetMetadata)
+			snapshots.POST("/:id/rollback", snapshotHandler.Rollback)
+			snapshots.DELETE("/:id", snapshotHandler.Delete)
+		}
+
+		// Deployments (will be implemented in Phase 4.2)
 		// deployments := v1.Group("/deployments")
 		// {
 		// 	deployments.GET("", deploymentHandler.GetDeployments)
 		// 	deployments.GET("/:id", deploymentHandler.GetDeployment)
 		// 	deployments.GET("/:id/logs", deploymentHandler.GetDeploymentLogs)
-		// }
-
-		// Snapshots (will be implemented in Phase 4)
-		// snapshots := v1.Group("/snapshots")
-		// {
-		// 	snapshots.GET("/project/:project_id", snapshotHandler.GetSnapshots)
-		// 	snapshots.POST("/:id/rollback", snapshotHandler.Rollback)
 		// }
 	}
 

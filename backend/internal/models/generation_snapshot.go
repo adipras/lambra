@@ -8,8 +8,10 @@ import (
 
 // GenerationSnapshot represents a snapshot of generated code
 type GenerationSnapshot struct {
-	ID               int64           `db:"id" json:"id"`
-	ProjectID        int64           `db:"project_id" json:"project_id"`
+	ID               int64           `db:"id" json:"-"`
+	UUID             string          `db:"uuid" json:"id"`
+	ProjectID        int64           `db:"project_id" json:"-"`
+	ProjectUUID      string          `db:"-" json:"project_id"` // For API response
 	Version          string          `db:"version" json:"version"`
 	GitCommitHash    string          `db:"git_commit_hash" json:"git_commit_hash"`
 	GitTag           sql.NullString  `db:"git_tag" json:"git_tag,omitempty"`
@@ -17,7 +19,11 @@ type GenerationSnapshot struct {
 	DatabaseSnapshot json.RawMessage `db:"database_snapshot" json:"database_snapshot"` // Migration info
 	Status           string          `db:"status" json:"status"`                       // created, active, rolled_back
 	CreatedBy        sql.NullString  `db:"created_by" json:"created_by,omitempty"`
+	UpdatedBy        sql.NullString  `db:"updated_by" json:"-"`
+	DeletedBy        sql.NullString  `db:"deleted_by" json:"-"`
 	CreatedAt        time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt        time.Time       `db:"updated_at" json:"updated_at"`
+	DeletedAt        sql.NullTime    `db:"deleted_at" json:"-"`
 }
 
 // SnapshotMetadata contains snapshot metadata
