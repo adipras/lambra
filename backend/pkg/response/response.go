@@ -52,6 +52,22 @@ func SuccessWithPagination(c *gin.Context, data interface{}, pagination Paginati
 	})
 }
 
+type ResponseWithMeta struct {
+	Success bool                   `json:"success"`
+	Message string                 `json:"message,omitempty"`
+	Data    interface{}            `json:"data"`
+	Meta    map[string]interface{} `json:"meta,omitempty"`
+}
+
+func SuccessWithMeta(c *gin.Context, data interface{}, message string, meta map[string]interface{}) {
+	c.JSON(http.StatusOK, ResponseWithMeta{
+		Success: true,
+		Message: message,
+		Data:    data,
+		Meta:    meta,
+	})
+}
+
 func Error(c *gin.Context, statusCode int, message string, err error) {
 	errorMsg := ""
 	if err != nil {

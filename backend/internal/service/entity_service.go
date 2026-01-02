@@ -86,6 +86,9 @@ func (s *EntityService) generateCRUDEndpoints(entity *models.Entity, projectID i
 	responseSchema := s.generateResponseSchema(fields, entityNameLower)
 	listResponseSchema := s.generateListResponseSchema(fields, entityNameLower)
 
+	// Generate query param schema for id parameter
+	idQueryParamSchema := s.generateIDQueryParamSchema()
+
 	endpoints := []struct {
 		enabled        bool
 		name           string
@@ -96,10 +99,10 @@ func (s *EntityService) generateCRUDEndpoints(entity *models.Entity, projectID i
 		responseSchema json.RawMessage
 	}{
 		{opts.List, "List" + entityNamePlural, "GET", basePath, fmt.Sprintf("Get all %s", strings.ToLower(entityNamePlural)), nil, listResponseSchema},
-		{opts.Get, "Get" + entityName, "GET", basePath + "/:id", fmt.Sprintf("Get %s by ID", entityNameLower), nil, responseSchema},
+		{opts.Get, "Get" + entityName, "GET", basePath + "/detail", fmt.Sprintf("Get %s by ID (query param: id)", entityNameLower), idQueryParamSchema, responseSchema},
 		{opts.Create, "Create" + entityName, "POST", basePath, fmt.Sprintf("Create a new %s", entityNameLower), requestSchema, responseSchema},
-		{opts.Update, "Update" + entityName, "PUT", basePath + "/:id", fmt.Sprintf("Update %s by ID", entityNameLower), requestSchema, responseSchema},
-		{opts.Delete, "Delete" + entityName, "DELETE", basePath + "/:id", fmt.Sprintf("Delete %s by ID", entityNameLower), nil, s.generateDeleteResponseSchema()},
+		{opts.Update, "Update" + entityName, "PUT", basePath + "/update", fmt.Sprintf("Update %s by ID (query param: id)", entityNameLower), s.mergeSchemas(idQueryParamSchema, requestSchema), responseSchema},
+		{opts.Delete, "Delete" + entityName, "DELETE", basePath + "/delete", fmt.Sprintf("Delete %s by ID (query param: id)", entityNameLower), idQueryParamSchema, s.generateDeleteResponseSchema()},
 	}
 
 	for _, ep := range endpoints {
@@ -245,6 +248,84 @@ func (s *EntityService) generateDeleteResponseSchema() json.RawMessage {
 	}
 
 	data, _ := json.Marshal(schema)
+	return data
+}
+
+// generateIDQueryParamSchema creates JSON schema for id query parameter
+func (s *EntityService) generateIDQueryParamSchema() json.RawMessage {
+	schema := map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"id": map[string]interface{}{
+				"type":        "string",
+				"description": "ID of the resource (query parameter)",
+				"example":     "550e8400-e29b-41d4-a716-446655440000",
+			},
+		},
+		"required":          []string{"id"},
+		"x-parameter-style": "query",
+	}
+
+	data, _ := json.Marshal(schema)
+	return data
+}
+
+// mergeSchemas merges two JSON schemas into one
+func (s *EntityService) mergeSchemas(schema1, schema2 json.RawMessage) json.RawMessage {
+	if schema1 == nil {
+		return schema2
+	}
+	if schema2 == nil {
+		return schema1
+	}
+
+	var s1, s2 map[string]interface{}
+	json.Unmarshal(schema1, &s1)
+	json.Unmarshal(schema2, &s2)
+
+	// Get properties from both schemas
+	props1, _ := s1["properties"].(map[string]interface{})
+	props2, _ := s2["properties"].(map[string]interface{})
+
+	// Merge properties
+	mergedProps := make(map[string]interface{})
+	for k, v := range props1 {
+		mergedProps[k] = v
+	}
+	for k, v := range props2 {
+		mergedProps[k] = v
+	}
+
+	// Merge required fields
+	var required []string
+	if req1, ok := s1["required"].([]interface{}); ok {
+		for _, r := range req1 {
+			if str, ok := r.(string); ok {
+				required = append(required, str)
+			}
+		}
+	}
+	if req2, ok := s2["required"].([]interface{}); ok {
+		for _, r := range req2 {
+			if str, ok := r.(string); ok {
+				required = append(required, str)
+			}
+		}
+	}
+
+	merged := map[string]interface{}{
+		"type":       "object",
+		"properties": mergedProps,
+	}
+	if len(required) > 0 {
+		merged["required"] = required
+	}
+	// Mark as having query params
+	if s1["x-parameter-style"] == "query" || s2["x-parameter-style"] == "query" {
+		merged["x-parameter-style"] = "query"
+	}
+
+	data, _ := json.Marshal(merged)
 	return data
 }
 

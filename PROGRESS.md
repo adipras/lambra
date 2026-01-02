@@ -1,9 +1,9 @@
 # Lambra - Progress Tracker
 
-> **Last Updated:** 2025-12-31 (Phase 4.1 - Snapshot & Rollback System)
-> **Current Phase:** Phase 4.1 - Snapshot & Rollback (100% Complete ✅)
-> **Next Phase:** Phase 4.2 - Deployment Logs & Container Log Streaming
-> **Overall Progress:** 92% (Phase 1 + 1.5 + 2.1 + 2.2 + 2.4 + 3 + 3.5 + 3.6 + 4.1 complete)
+> **Last Updated:** 2026-01-02 (Query Params Migration - BSI UII Compliance)
+> **Current Phase:** Phase 4.2 - Deployment Logs (100% Complete ✅)
+> **Next Phase:** Phase 2.3 - GitLab Integration (Optional)
+> **Overall Progress:** 96% (Phase 1 + 1.5 + 2.1 + 2.2 + 2.4 + 3 + 3.5 + 3.6 + 4.1 + 4.2 complete)
 
 ---
 
@@ -1476,13 +1476,14 @@ curl -X POST http://localhost:8080/api/v1/projects \
 | 1.5.0 | 2025-12-29 | Phase 3.5 | Auto-Generate CRUD Endpoints & Schema Generation ✅ |
 | 1.6.0 | 2025-12-29 | Phase 3.6 | DB Config, Auto-Migration, Endpoint Testing, Delete Service ✅ |
 | 1.7.0 | 2025-12-31 | Phase 4.1 | Snapshot System & Rollback (50% Phase 4) ✅ |
-| 1.8.0 | TBD | Phase 4.2 | Deployment Logs & SSE Streaming (pending) |
+| 1.8.0 | 2026-01-02 | Phase 4.2 | Deployment Logs & SSE Streaming ✅ |
+| 1.8.1 | 2026-01-02 | Hotfix | Query Params Migration (BSI UII Compliance) ✅ |
 | 1.9.0 | TBD | Phase 2.3 | GitLab integration (optional) |
 
 ---
 
-**Last Review:** 2025-12-31 (Phase 4.1 - Snapshot & Rollback System)
-**Next Review:** Phase 4.2 - Deployment Logs & Container Log Streaming
+**Last Review:** 2026-01-02 (Query Params Migration - BSI UII Compliance)
+**Next Review:** Phase 2.3 - GitLab Integration (Optional)
 **Maintained By:** Development Team
 
 **Note for Next Session:**
@@ -1534,12 +1535,40 @@ curl -X POST http://localhost:8080/api/v1/projects \
   - Frontend: SnapshotList component with rollback confirmation
   - Frontend: snapshots.js API client
   - Full rollback: restores entities/endpoints from snapshot and redeploys
-- ⏳ Phase 4.2 - Deployment Logs (Next)
-  - [ ] Create DeploymentRepository
-  - [ ] Update Deployment model with UUID
-  - [ ] Add logging during deploy process
-  - [ ] Container logs with SSE streaming
-  - [ ] Frontend LogViewer component
+- ✅ Phase 4.2 - Deployment Logs & Container Log Streaming (2026-01-02)
+  - [x] Updated Deployment model with UUID (dual identifier pattern)
+  - [x] Created DeploymentRepository with full CRUD operations
+  - [x] Created DeploymentLogRepository for log entries
+  - [x] Updated DeploymentService to log each deployment step
+  - [x] Added deployment step constants (init, snapshot, generate_code, write_files, docker_build, docker_start, complete)
+  - [x] Added SSE endpoints for real-time log streaming
+  - [x] API Routes: GET /deployments/:id, GET /deployments/:id/logs, GET /deployments/:id/logs/stream
+  - [x] API Routes: GET /projects/:id/deployments, GET /projects/:id/deployments/latest
+  - [x] API Routes: GET /projects/:id/container-logs, GET /projects/:id/container-logs/stream
+  - [x] Frontend: LogViewer component with filtering and auto-scroll
+  - [x] Frontend: DeploymentHistory component with expandable logs
+  - [x] Frontend: LogsModal with deployment logs and container logs tabs
+  - [x] Frontend: deployments.js API client with SSE support
+  - [x] Added migration 003_add_step_to_deployment_logs for step column
+- ✅ Query Params Migration (v1.8.1 - BSI UII Compliance) (2026-01-02)
+  - [x] **Aturan BSI UII**: Tidak boleh menggunakan path params, hanya boleh query params
+  - [x] Updated entity_service.go - endpoint paths changed:
+    - GET `/:id` → GET `/detail?id=xxx`
+    - PUT `/:id` → PUT `/update?id=xxx`
+    - DELETE `/:id` → DELETE `/delete?id=xxx`
+  - [x] Added `generateIDQueryParamSchema()` - creates schema with `x-parameter-style: query`
+  - [x] Added `mergeSchemas()` - combines query params with body schema
+  - [x] Updated templates.go - handler templates:
+    - Get handler: `c.Query("id")` instead of `c.Param("id")`
+    - Update handler: `c.Query("id")` instead of `c.Param("id")`
+    - Delete handler: `c.Query("id")` instead of `c.Param("id")`
+  - [x] Updated deployment_service.go - default fallback routes use query params style
+  - [x] Updated endpoint.go (TestEndpoint) - params appended as query string
+  - [x] Updated TestEndpointModal.jsx - frontend support for query params:
+    - Detects query params from `x-parameter-style: query` in schema
+    - Shows input fields for query parameters
+    - Preview URL displays query string format
+  - **Note**: Perlu restart Lambra dan redeploy existing services untuk menggunakan query params
 - ⏳ Optional: GitLab Integration (Phase 2.3)
 - ⏳ Optional: Build & publish Docker images to registry
 - Docker services: MySQL on port 3307 (to avoid WSL conflict)

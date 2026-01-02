@@ -366,9 +366,13 @@ func (h *{{ .EntityName }}Handler) Create{{ .EntityName }}(c *gin.Context) {
 	c.JSON(http.StatusCreated, dto.{{ .EntityName }}Response{}.FromModel({{ .EntityNameLC }}))
 }
 
-// Get{{ .EntityName }} retrieves a {{ toLower .EntityName }} by ID
+// Get{{ .EntityName }} retrieves a {{ toLower .EntityName }} by ID (query param)
 func (h *{{ .EntityName }}Handler) Get{{ .EntityName }}(c *gin.Context) {
-	idStr := c.Param("id")
+	idStr := c.Query("id")
+	if idStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Query parameter 'id' is required"})
+		return
+	}
 
 	// Try as UUID first
 	if id, err := uuid.Parse(idStr); err == nil {
@@ -421,11 +425,11 @@ func (h *{{ .EntityName }}Handler) List{{ pluralize .EntityName }}(c *gin.Contex
 	})
 }
 
-// Update{{ .EntityName }} updates a {{ toLower .EntityName }}
+// Update{{ .EntityName }} updates a {{ toLower .EntityName }} (query param: id)
 func (h *{{ .EntityName }}Handler) Update{{ .EntityName }}(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+	idStr := c.Query("id")
+	if idStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Query parameter 'id' is required"})
 		return
 	}
 
@@ -436,6 +440,29 @@ func (h *{{ .EntityName }}Handler) Update{{ .EntityName }}(c *gin.Context) {
 	}
 
 	{{ .EntityNameLC }} := req.ToModel()
+
+	// Try as UUID first
+	if uuidVal, err := uuid.Parse(idStr); err == nil {
+		existing, err := h.service.GetByUUID(c.Request.Context(), uuidVal)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "{{ .EntityName }} not found"})
+			return
+		}
+		if err := h.service.Update(c.Request.Context(), existing.ID, {{ .EntityNameLC }}); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, dto.{{ .EntityName }}Response{}.FromModel({{ .EntityNameLC }}))
+		return
+	}
+
+	// Try as integer ID
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
+		return
+	}
+
 	if err := h.service.Update(c.Request.Context(), id, {{ .EntityNameLC }}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -444,11 +471,33 @@ func (h *{{ .EntityName }}Handler) Update{{ .EntityName }}(c *gin.Context) {
 	c.JSON(http.StatusOK, dto.{{ .EntityName }}Response{}.FromModel({{ .EntityNameLC }}))
 }
 
-// Delete{{ .EntityName }} deletes a {{ toLower .EntityName }}
+// Delete{{ .EntityName }} deletes a {{ toLower .EntityName }} (query param: id)
 func (h *{{ .EntityName }}Handler) Delete{{ .EntityName }}(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	idStr := c.Query("id")
+	if idStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Query parameter 'id' is required"})
+		return
+	}
+
+	// Try as UUID first
+	if uuidVal, err := uuid.Parse(idStr); err == nil {
+		existing, err := h.service.GetByUUID(c.Request.Context(), uuidVal)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "{{ .EntityName }} not found"})
+			return
+		}
+		if err := h.service.Delete(c.Request.Context(), existing.ID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "Successfully deleted"})
+		return
+	}
+
+	// Try as integer ID
+	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
 		return
 	}
 
@@ -457,7 +506,7 @@ func (h *{{ .EntityName }}Handler) Delete{{ .EntityName }}(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusNoContent, nil)
+	c.JSON(http.StatusOK, gin.H{"message": "Successfully deleted"})
 }
 `
 

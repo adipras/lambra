@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -18,13 +19,15 @@ import (
 
 // DeploymentService handles service deployment operations
 type DeploymentService struct {
-	projectRepo    *repository.ProjectRepository
-	entityRepo     *repository.EntityRepository
-	endpointRepo   *repository.EndpointRepository
-	snapshotRepo   *repository.SnapshotRepository
-	generatorSvc   *GeneratorService
-	workspacePath  string
-	basePort       int
+	projectRepo       *repository.ProjectRepository
+	entityRepo        *repository.EntityRepository
+	endpointRepo      *repository.EndpointRepository
+	snapshotRepo      *repository.SnapshotRepository
+	deploymentRepo    *repository.DeploymentRepository
+	deploymentLogRepo *repository.DeploymentLogRepository
+	generatorSvc      *GeneratorService
+	workspacePath     string
+	basePort          int
 }
 
 // NewDeploymentService creates a new deployment service
@@ -33,17 +36,21 @@ func NewDeploymentService(
 	entityRepo *repository.EntityRepository,
 	endpointRepo *repository.EndpointRepository,
 	snapshotRepo *repository.SnapshotRepository,
+	deploymentRepo *repository.DeploymentRepository,
+	deploymentLogRepo *repository.DeploymentLogRepository,
 	generatorSvc *GeneratorService,
 	workspacePath string,
 ) *DeploymentService {
 	return &DeploymentService{
-		projectRepo:   projectRepo,
-		entityRepo:    entityRepo,
-		endpointRepo:  endpointRepo,
-		snapshotRepo:  snapshotRepo,
-		generatorSvc:  generatorSvc,
-		workspacePath: workspacePath,
-		basePort:      9000, // Generated services start from port 9000
+		projectRepo:       projectRepo,
+		entityRepo:        entityRepo,
+		endpointRepo:      endpointRepo,
+		snapshotRepo:      snapshotRepo,
+		deploymentRepo:    deploymentRepo,
+		deploymentLogRepo: deploymentLogRepo,
+		generatorSvc:      generatorSvc,
+		workspacePath:     workspacePath,
+		basePort:          9000, // Generated services start from port 9000
 	}
 }
 
@@ -61,12 +68,13 @@ type ServiceStatus struct {
 
 // DeployResult represents the result of a deployment
 type DeployResult struct {
-	Success     bool   `json:"success"`
-	Message     string `json:"message"`
-	ServiceName string `json:"service_name"`
-	Port        int    `json:"port"`
-	URL         string `json:"url"`
-	InternalURL string `json:"internal_url"`
+	Success      bool   `json:"success"`
+	Message      string `json:"message"`
+	DeploymentID string `json:"deployment_id"`
+	ServiceName  string `json:"service_name"`
+	Port         int    `json:"port"`
+	URL          string `json:"url"`
+	InternalURL  string `json:"internal_url"`
 }
 
 // DeployProject generates code and deploys the service
@@ -77,65 +85,120 @@ func (s *DeploymentService) DeployProject(ctx context.Context, projectUUID strin
 		return nil, fmt.Errorf("failed to get project: %w", err)
 	}
 
-	// Auto-create snapshot before deployment
-	snapshot, err := s.createSnapshot(project)
-	if err != nil {
-		// Log warning but continue with deployment
-		fmt.Printf("Warning: failed to create snapshot: %v\n", err)
-	} else {
-		fmt.Printf("Snapshot created: %s (version %s)\n", snapshot.UUID, snapshot.Version)
+	serviceName := toKebabCase(project.Name)
+	port := s.getPortForProject(project.ID)
+
+	// Create deployment record
+	deployment := &models.Deployment{
+		ProjectID:   project.ID,
+		Environment: models.DeploymentEnvDev,
+		Status:      models.DeploymentStatusDeploying,
+		Version:     fmt.Sprintf("v%d", time.Now().Unix()),
+		StartedAt:   time.Now(),
+	}
+	deployment.CreatedBy = sql.NullString{String: "system", Valid: true}
+
+	if err := s.deploymentRepo.Create(deployment); err != nil {
+		return nil, fmt.Errorf("failed to create deployment record: %w", err)
 	}
 
-	serviceName := toKebabCase(project.Name)
+	// Helper function to log deployment steps
+	logStep := func(level, message, step string) {
+		s.deploymentLogRepo.Create(&models.DeploymentLog{
+			DeploymentID: deployment.ID,
+			Level:        level,
+			Message:      message,
+			Step:         step,
+		})
+	}
+
+	logStep(models.LogLevelInfo, fmt.Sprintf("Starting deployment for project: %s", project.Name), models.DeployStepInit)
+
+	// Auto-create snapshot before deployment
+	logStep(models.LogLevelInfo, "Creating snapshot...", models.DeployStepSnapshot)
+	snapshot, err := s.createSnapshot(project)
+	if err != nil {
+		logStep(models.LogLevelWarning, fmt.Sprintf("Failed to create snapshot: %v", err), models.DeployStepSnapshot)
+	} else {
+		logStep(models.LogLevelInfo, fmt.Sprintf("Snapshot created: %s (version %s)", snapshot.UUID, snapshot.Version), models.DeployStepSnapshot)
+		// Update deployment with snapshot ID
+		deployment.SnapshotID = sql.NullInt64{Int64: snapshot.ID, Valid: true}
+	}
+
 	serviceDir := filepath.Join(s.workspacePath, serviceName)
 
 	// Create service directory
+	logStep(models.LogLevelInfo, fmt.Sprintf("Creating service directory: %s", serviceDir), models.DeployStepGenerateCode)
 	if err := os.MkdirAll(serviceDir, 0755); err != nil {
+		logStep(models.LogLevelError, fmt.Sprintf("Failed to create service directory: %v", err), models.DeployStepGenerateCode)
+		s.deploymentRepo.SetFailed(deployment.UUID, err.Error())
 		return nil, fmt.Errorf("failed to create service directory: %w", err)
 	}
 
 	// Generate code (pass empty string so file paths are relative)
+	logStep(models.LogLevelInfo, "Generating code...", models.DeployStepGenerateCode)
 	response, err := s.generatorSvc.GenerateProjectByUUID(ctx, projectUUID, "")
 	if err != nil {
+		logStep(models.LogLevelError, fmt.Sprintf("Failed to generate code: %v", err), models.DeployStepGenerateCode)
+		s.deploymentRepo.SetFailed(deployment.UUID, err.Error())
 		return nil, fmt.Errorf("failed to generate code: %w", err)
 	}
+	logStep(models.LogLevelInfo, fmt.Sprintf("Generated %d files", len(response.Files)), models.DeployStepGenerateCode)
 
 	// Write generated files
+	logStep(models.LogLevelInfo, "Writing generated files...", models.DeployStepWriteFiles)
 	for _, file := range response.Files {
 		filePath := filepath.Join(serviceDir, file.Path)
 		if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+			logStep(models.LogLevelError, fmt.Sprintf("Failed to create directory for %s: %v", file.Path, err), models.DeployStepWriteFiles)
+			s.deploymentRepo.SetFailed(deployment.UUID, err.Error())
 			return nil, fmt.Errorf("failed to create directory for %s: %w", file.Path, err)
 		}
 		if err := os.WriteFile(filePath, []byte(file.Content), 0644); err != nil {
+			logStep(models.LogLevelError, fmt.Sprintf("Failed to write file %s: %v", file.Path, err), models.DeployStepWriteFiles)
+			s.deploymentRepo.SetFailed(deployment.UUID, err.Error())
 			return nil, fmt.Errorf("failed to write file %s: %w", file.Path, err)
 		}
 	}
-
-	// Assign port based on project ID
-	port := s.getPortForProject(project.ID)
+	logStep(models.LogLevelInfo, fmt.Sprintf("Wrote %d files to %s", len(response.Files), serviceDir), models.DeployStepWriteFiles)
 
 	// Generate Docker files
+	logStep(models.LogLevelInfo, "Generating Docker files...", models.DeployStepDockerBuild)
 	if err := s.generateDockerFiles(project, serviceDir, port); err != nil {
+		logStep(models.LogLevelError, fmt.Sprintf("Failed to generate Docker files: %v", err), models.DeployStepDockerBuild)
+		s.deploymentRepo.SetFailed(deployment.UUID, err.Error())
 		return nil, fmt.Errorf("failed to generate Docker files: %w", err)
 	}
 
 	// Generate main.go and go.mod
+	logStep(models.LogLevelInfo, "Generating Go files...", models.DeployStepDockerBuild)
 	if err := s.generateGoFiles(project, serviceDir, port); err != nil {
+		logStep(models.LogLevelError, fmt.Sprintf("Failed to generate Go files: %v", err), models.DeployStepDockerBuild)
+		s.deploymentRepo.SetFailed(deployment.UUID, err.Error())
 		return nil, fmt.Errorf("failed to generate Go files: %w", err)
 	}
 
 	// Build and start the service
+	logStep(models.LogLevelInfo, "Building and starting Docker container...", models.DeployStepDockerStart)
 	if err := s.startService(serviceDir); err != nil {
+		logStep(models.LogLevelError, fmt.Sprintf("Failed to start service: %v", err), models.DeployStepDockerStart)
+		s.deploymentRepo.SetFailed(deployment.UUID, err.Error())
 		return nil, fmt.Errorf("failed to start service: %w", err)
 	}
 
+	// Mark deployment as successful
+	deploymentURL := fmt.Sprintf("http://localhost:%d", port)
+	s.deploymentRepo.SetCompleted(deployment.UUID, models.DeploymentStatusSuccess, deploymentURL)
+	logStep(models.LogLevelInfo, fmt.Sprintf("Service deployed successfully at %s", deploymentURL), models.DeployStepComplete)
+
 	return &DeployResult{
-		Success:     true,
-		Message:     fmt.Sprintf("Service %s deployed successfully", serviceName),
-		ServiceName: serviceName,
-		Port:        port,
-		URL:         fmt.Sprintf("http://localhost:%d", port),
-		InternalURL: fmt.Sprintf("http://host.docker.internal:%d", port),
+		Success:      true,
+		Message:      fmt.Sprintf("Service %s deployed successfully", serviceName),
+		DeploymentID: deployment.UUID,
+		ServiceName:  serviceName,
+		Port:         port,
+		URL:          deploymentURL,
+		InternalURL:  fmt.Sprintf("http://host.docker.internal:%d", port),
 	}, nil
 }
 
@@ -616,15 +679,15 @@ require (
 				endpoint.Method, endpoint.Path, entityNameLower, handlerMethod))
 		}
 
-		// Add default CRUD routes if no endpoints exist
+		// Add default CRUD routes if no endpoints exist (using query params per BSI UII rules)
 		if len(endpoints) == 0 {
 			basePath := "/" + entityNameSnake + "s"
 			entityNamePlural := pluralize(entityNamePascal)
 			routes.WriteString(fmt.Sprintf("\tr.GET(\"%s\", %sHandler.List%s)\n", basePath, entityNameLower, entityNamePlural))
-			routes.WriteString(fmt.Sprintf("\tr.GET(\"%s/:id\", %sHandler.Get%s)\n", basePath, entityNameLower, entityNamePascal))
+			routes.WriteString(fmt.Sprintf("\tr.GET(\"%s/detail\", %sHandler.Get%s)\n", basePath, entityNameLower, entityNamePascal))
 			routes.WriteString(fmt.Sprintf("\tr.POST(\"%s\", %sHandler.Create%s)\n", basePath, entityNameLower, entityNamePascal))
-			routes.WriteString(fmt.Sprintf("\tr.PUT(\"%s/:id\", %sHandler.Update%s)\n", basePath, entityNameLower, entityNamePascal))
-			routes.WriteString(fmt.Sprintf("\tr.DELETE(\"%s/:id\", %sHandler.Delete%s)\n", basePath, entityNameLower, entityNamePascal))
+			routes.WriteString(fmt.Sprintf("\tr.PUT(\"%s/update\", %sHandler.Update%s)\n", basePath, entityNameLower, entityNamePascal))
+			routes.WriteString(fmt.Sprintf("\tr.DELETE(\"%s/delete\", %sHandler.Delete%s)\n", basePath, entityNameLower, entityNamePascal))
 		}
 	}
 
@@ -865,4 +928,158 @@ func pluralize(s string) string {
 		return s + "es"
 	}
 	return s + "s"
+}
+
+// GetDeploymentsByProjectUUID retrieves all deployments for a project
+func (s *DeploymentService) GetDeploymentsByProjectUUID(ctx context.Context, projectUUID string, limit, offset int) ([]models.Deployment, int64, error) {
+	project, err := s.projectRepo.GetByUUID(projectUUID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get project: %w", err)
+	}
+
+	deployments, total, err := s.deploymentRepo.GetByProjectID(project.ID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get deployments: %w", err)
+	}
+
+	return deployments, total, nil
+}
+
+// GetDeploymentByUUID retrieves a single deployment by UUID
+func (s *DeploymentService) GetDeploymentByUUID(ctx context.Context, deploymentUUID string) (*models.DeploymentWithLogs, error) {
+	deployment, err := s.deploymentRepo.GetByUUID(deploymentUUID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get deployment: %w", err)
+	}
+
+	logs, err := s.deploymentLogRepo.GetByDeploymentID(deployment.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get deployment logs: %w", err)
+	}
+
+	return &models.DeploymentWithLogs{
+		Deployment: *deployment,
+		Logs:       logs,
+	}, nil
+}
+
+// GetDeploymentLogs retrieves logs for a deployment
+func (s *DeploymentService) GetDeploymentLogs(ctx context.Context, deploymentUUID string, limit, offset int) ([]models.DeploymentLog, int64, error) {
+	deployment, err := s.deploymentRepo.GetByUUID(deploymentUUID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get deployment: %w", err)
+	}
+
+	logs, total, err := s.deploymentLogRepo.GetByDeploymentIDPaginated(deployment.ID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get deployment logs: %w", err)
+	}
+
+	return logs, total, nil
+}
+
+// GetDeploymentLogsSince retrieves logs created after a specific time
+func (s *DeploymentService) GetDeploymentLogsSince(ctx context.Context, deploymentUUID string, since time.Time) ([]models.DeploymentLog, error) {
+	deployment, err := s.deploymentRepo.GetByUUID(deploymentUUID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get deployment: %w", err)
+	}
+
+	logs, err := s.deploymentLogRepo.GetByDeploymentIDSince(deployment.ID, since)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get deployment logs: %w", err)
+	}
+
+	return logs, nil
+}
+
+// GetDeploymentLogsAfterID retrieves logs with ID greater than specified (for SSE streaming)
+func (s *DeploymentService) GetDeploymentLogsAfterID(ctx context.Context, deploymentUUID string, afterID int64) ([]models.DeploymentLog, error) {
+	deployment, err := s.deploymentRepo.GetByUUID(deploymentUUID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get deployment: %w", err)
+	}
+
+	logs, err := s.deploymentLogRepo.GetByDeploymentIDAfterId(deployment.ID, afterID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get deployment logs: %w", err)
+	}
+
+	return logs, nil
+}
+
+// GetLatestDeploymentByProjectUUID retrieves the latest deployment for a project
+func (s *DeploymentService) GetLatestDeploymentByProjectUUID(ctx context.Context, projectUUID string) (*models.DeploymentWithLogs, error) {
+	project, err := s.projectRepo.GetByUUID(projectUUID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get project: %w", err)
+	}
+
+	deployment, err := s.deploymentRepo.GetLatestByProjectID(project.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get latest deployment: %w", err)
+	}
+	if deployment == nil {
+		return nil, nil
+	}
+
+	logs, err := s.deploymentLogRepo.GetByDeploymentID(deployment.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get deployment logs: %w", err)
+	}
+
+	return &models.DeploymentWithLogs{
+		Deployment: *deployment,
+		Logs:       logs,
+	}, nil
+}
+
+// GetContainerLogs retrieves Docker container logs for a running service
+func (s *DeploymentService) GetContainerLogs(ctx context.Context, projectUUID string, tail int) (string, error) {
+	project, err := s.projectRepo.GetByUUID(projectUUID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get project: %w", err)
+	}
+
+	serviceName := toKebabCase(project.Name)
+
+	// Check if container is running
+	status := s.checkContainerStatus(serviceName)
+	if status != "running" {
+		return "", fmt.Errorf("container is not running")
+	}
+
+	// Get container logs
+	args := []string{"logs", serviceName}
+	if tail > 0 {
+		args = append(args, "--tail", fmt.Sprintf("%d", tail))
+	}
+
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("failed to get container logs: %w", err)
+	}
+
+	return string(output), nil
+}
+
+// StreamContainerLogs creates a command that streams container logs (for SSE)
+func (s *DeploymentService) StreamContainerLogs(ctx context.Context, projectUUID string) (*exec.Cmd, error) {
+	project, err := s.projectRepo.GetByUUID(projectUUID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get project: %w", err)
+	}
+
+	serviceName := toKebabCase(project.Name)
+
+	// Check if container is running
+	status := s.checkContainerStatus(serviceName)
+	if status != "running" {
+		return nil, fmt.Errorf("container is not running")
+	}
+
+	// Create command to stream logs
+	cmd := exec.CommandContext(ctx, "docker", "logs", "-f", "--tail", "100", serviceName)
+	return cmd, nil
 }

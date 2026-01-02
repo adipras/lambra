@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -180,12 +181,18 @@ func (h *EndpointHandler) TestEndpoint(c *gin.Context) {
 	// Build URL - use InternalURL for backend-to-service communication
 	targetURL := status.InternalURL + endpoint.Path
 
-	// Replace path parameters if provided
-	for key, value := range req.Params {
-		targetURL = bytes.NewBuffer([]byte(targetURL)).String()
-		_ = key
-		_ = value
-		// Simple parameter replacement (could be enhanced)
+	// Add query parameters if provided
+	// Query params are appended to the URL as ?key=value&key2=value2
+	if len(req.Params) > 0 {
+		queryParams := make([]string, 0, len(req.Params))
+		for key, value := range req.Params {
+			queryParams = append(queryParams, key+"="+value)
+		}
+		if strings.Contains(targetURL, "?") {
+			targetURL += "&" + strings.Join(queryParams, "&")
+		} else {
+			targetURL += "?" + strings.Join(queryParams, "&")
+		}
 	}
 
 	// Create HTTP request

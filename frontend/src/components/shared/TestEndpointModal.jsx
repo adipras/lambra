@@ -11,27 +11,134 @@ const METHOD_COLORS = {
   PATCH: 'bg-purple-500',
 }
 
+// Extract query parameters from request schema
+// Checks for x-parameter-style: query in schema
+const extractQueryParams = (schema) => {
+  if (!schema || schema['x-parameter-style'] !== 'query') {
+    return []
+  }
+
+  const properties = schema.properties || {}
+  const required = schema.required || []
+
+  return Object.entries(properties).map(([name, prop]) => ({
+    name,
+    type: prop.type || 'string',
+    description: prop.description || '',
+    example: prop.example || '',
+    required: required.includes(name)
+  }))
+}
+
+// Extract body fields from schema (excluding query params)
+const extractBodySchema = (schema) => {
+  if (!schema || schema['x-parameter-style'] === 'query') {
+    return null
+  }
+
+  // For merged schemas (query + body), separate them
+  // If schema has x-parameter-style but also has body fields
+  const properties = schema.properties || {}
+  const queryParams = ['id'] // Known query param names
+
+  const bodyProperties = {}
+  Object.entries(properties).forEach(([key, value]) => {
+    if (!queryParams.includes(key) || !value.description?.includes('query')) {
+      bodyProperties[key] = value
+    }
+  })
+
+  if (Object.keys(bodyProperties).length === 0) {
+    return null
+  }
+
+  return {
+    ...schema,
+    properties: bodyProperties,
+    required: (schema.required || []).filter(r => !queryParams.includes(r))
+  }
+}
+
 export const TestEndpointModal = ({ endpoint, serviceUrl, onClose }) => {
   const [requestBody, setRequestBody] = useState('')
+  const [queryParams, setQueryParams] = useState({})
   const [response, setResponse] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState(null)
   const [copied, setCopied] = useState(false)
 
-  // Generate example request body from schema
+  // Extract query params from request schema
+  const queryParamDefs = endpoint?.request_schema ? extractQueryParams(endpoint.request_schema) : []
+  const hasQueryParams = queryParamDefs.length > 0
+
+  // Get body schema (excluding query params)
+  const bodySchema = endpoint?.request_schema ? extractBodySchema(endpoint.request_schema) : null
+
+  // Initialize query params with example values
   useEffect(() => {
-    if (endpoint?.request_schema && Object.keys(endpoint.request_schema).length > 0) {
+    if (queryParamDefs.length > 0) {
+      const initialParams = {}
+      queryParamDefs.forEach(param => {
+        initialParams[param.name] = param.example || ''
+      })
+      setQueryParams(initialParams)
+    }
+  }, [endpoint?.request_schema])
+
+  // Generate example request body from schema (excluding query params)
+  useEffect(() => {
+    if (bodySchema && Object.keys(bodySchema.properties || {}).length > 0) {
+      const example = generateExampleFromSchema(bodySchema)
+      setRequestBody(JSON.stringify(example, null, 2))
+    } else if (endpoint?.request_schema && !hasQueryParams && Object.keys(endpoint.request_schema).length > 0) {
       const example = generateExampleFromSchema(endpoint.request_schema)
       setRequestBody(JSON.stringify(example, null, 2))
     } else {
       setRequestBody('')
     }
-  }, [endpoint])
+  }, [endpoint, hasQueryParams])
+
+  // Update a single query param
+  const updateQueryParam = (key, value) => {
+    setQueryParams(prev => ({ ...prev, [key]: value }))
+  }
+
+  // Build preview URL with query params
+  const buildPreviewUrl = () => {
+    let url = endpoint?.path || ''
+    if (hasQueryParams) {
+      const params = new URLSearchParams()
+      Object.entries(queryParams).forEach(([key, value]) => {
+        if (value) {
+          params.append(key, value)
+        }
+      })
+      const paramString = params.toString()
+      if (paramString) {
+        url += '?' + paramString
+      }
+    }
+    return url
+  }
+
+  const previewUrl = buildPreviewUrl()
 
   const handleTest = async () => {
     setIsLoading(true)
     setError(null)
     setResponse(null)
+
+    // Validate required query params are filled
+    if (hasQueryParams) {
+      const missingParams = queryParamDefs
+        .filter(param => param.required && !queryParams[param.name]?.trim())
+        .map(param => param.name)
+      if (missingParams.length > 0) {
+        setError(`Missing required query parameters: ${missingParams.join(', ')}`)
+        setIsLoading(false)
+        return
+      }
+    }
 
     try {
       // Parse request body if present
@@ -46,10 +153,11 @@ export const TestEndpointModal = ({ endpoint, serviceUrl, onClose }) => {
         }
       }
 
-      // Call the test endpoint API
+      // Call the test endpoint API with query params
       const result = await endpointsApi.test(endpoint.id, {
         body: body,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
+        params: hasQueryParams ? queryParams : undefined
       })
 
       console.log('Test result:', result) // Debug log
@@ -109,7 +217,10 @@ export const TestEndpointModal = ({ endpoint, serviceUrl, onClose }) => {
             </span>
             <div>
               <h2 className="text-lg font-bold text-gray-900">{endpoint?.name}</h2>
-              <p className="text-sm font-mono text-gray-500">{serviceUrl}{endpoint?.path}</p>
+              <p className="text-sm font-mono text-gray-500">
+                {serviceUrl}
+                <span className={hasQueryParams ? 'text-blue-600' : ''}>{previewUrl}</span>
+              </p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-lg transition-colors">
@@ -123,14 +234,51 @@ export const TestEndpointModal = ({ endpoint, serviceUrl, onClose }) => {
           <div className="w-1/2 border-r border-gray-200 flex flex-col">
             <div className="px-4 py-3 bg-green-50 border-b border-green-200">
               <h3 className="font-semibold text-green-800">Request</h3>
-              {needsBody && (
-                <p className="text-xs text-green-600 mt-0.5">Edit the JSON body below</p>
+              {(hasQueryParams || needsBody) && (
+                <p className="text-xs text-green-600 mt-0.5">
+                  {hasQueryParams && needsBody
+                    ? 'Configure query params and JSON body below'
+                    : hasQueryParams
+                      ? 'Configure query parameters below'
+                      : 'Edit the JSON body below'}
+                </p>
               )}
             </div>
 
-            <div className="flex-1 overflow-auto p-4">
+            <div className="flex-1 overflow-auto p-4 space-y-4">
+              {/* Query Parameters Section */}
+              {hasQueryParams && (
+                <div className="space-y-3">
+                  <h4 className="text-sm font-medium text-gray-700">Query Parameters</h4>
+                  {queryParamDefs.map(param => (
+                    <div key={param.name} className="space-y-1">
+                      <label className="flex items-center gap-2 text-sm text-gray-600">
+                        <span className="font-medium">{param.name}</span>
+                        {param.required && (
+                          <span className="text-red-500 text-xs">*required</span>
+                        )}
+                      </label>
+                      <input
+                        type="text"
+                        value={queryParams[param.name] || ''}
+                        onChange={(e) => updateQueryParam(param.name, e.target.value)}
+                        placeholder={param.example || `Enter ${param.name}...`}
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      />
+                      {param.description && (
+                        <p className="text-xs text-gray-500">{param.description}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Request Body Section */}
               {needsBody ? (
-                <div className="h-full">
+                <div className="flex-1">
+                  {hasQueryParams && (
+                    <h4 className="text-sm font-medium text-gray-700 mb-2">Request Body</h4>
+                  )}
                   <textarea
                     value={requestBody}
                     onChange={(e) => setRequestBody(e.target.value)}
@@ -139,13 +287,13 @@ export const TestEndpointModal = ({ endpoint, serviceUrl, onClose }) => {
                     spellCheck={false}
                   />
                 </div>
-              ) : (
+              ) : !hasQueryParams ? (
                 <div className="flex items-center justify-center h-full text-gray-400">
                   <div className="text-center">
-                    <p className="text-sm">No request body required for {endpoint?.method}</p>
+                    <p className="text-sm">No request parameters required for {endpoint?.method}</p>
                   </div>
                 </div>
-              )}
+              ) : null}
             </div>
 
             {/* Send Button */}

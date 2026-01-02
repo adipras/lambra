@@ -29,13 +29,15 @@ func Setup(db *sqlx.DB) *gin.Engine {
 	entityRepo := repository.NewEntityRepository(db)
 	endpointRepo := repository.NewEndpointRepository(db)
 	snapshotRepo := repository.NewSnapshotRepository(db)
+	deploymentRepo := repository.NewDeploymentRepository(db)
+	deploymentLogRepo := repository.NewDeploymentLogRepository(db)
 
 	// Initialize services
 	projectService := service.NewProjectService(projectRepo)
 	entityService := service.NewEntityService(entityRepo, projectRepo, endpointRepo)
 	endpointService := service.NewEndpointService(endpointRepo, entityRepo, projectRepo)
 	generatorService := service.NewGeneratorService(projectRepo, entityRepo, endpointRepo)
-	deploymentService := service.NewDeploymentService(projectRepo, entityRepo, endpointRepo, snapshotRepo, generatorService, workspacePath)
+	deploymentService := service.NewDeploymentService(projectRepo, entityRepo, endpointRepo, snapshotRepo, deploymentRepo, deploymentLogRepo, generatorService, workspacePath)
 	exportService := service.NewExportService(projectRepo, entityRepo, endpointRepo)
 	snapshotService := service.NewSnapshotService(snapshotRepo, projectRepo, entityRepo, endpointRepo)
 
@@ -124,13 +126,19 @@ func Setup(db *sqlx.DB) *gin.Engine {
 			snapshots.DELETE("/:id", snapshotHandler.Delete)
 		}
 
-		// Deployments (will be implemented in Phase 4.2)
-		// deployments := v1.Group("/deployments")
-		// {
-		// 	deployments.GET("", deploymentHandler.GetDeployments)
-		// 	deployments.GET("/:id", deploymentHandler.GetDeployment)
-		// 	deployments.GET("/:id/logs", deploymentHandler.GetDeploymentLogs)
-		// }
+		// Deployments
+		deployments := v1.Group("/deployments")
+		{
+			deployments.GET("/:id", deploymentHandler.GetDeployment)
+			deployments.GET("/:id/logs", deploymentHandler.GetDeploymentLogs)
+			deployments.GET("/:id/logs/stream", deploymentHandler.StreamDeploymentLogs)
+		}
+
+		// Project deployments
+		projects.GET("/:id/deployments", deploymentHandler.GetProjectDeployments)
+		projects.GET("/:id/deployments/latest", deploymentHandler.GetLatestDeployment)
+		projects.GET("/:id/container-logs", deploymentHandler.GetContainerLogs)
+		projects.GET("/:id/container-logs/stream", deploymentHandler.StreamContainerLogs)
 	}
 
 	return router

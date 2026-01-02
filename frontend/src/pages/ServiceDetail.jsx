@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft, Plus, Trash2, Code, Play, Eye, X, FileCode, Check, AlertCircle,
   Square, Rocket, ExternalLink, RefreshCw, ChevronRight, FileJson,
-  ChevronDown, ChevronUp, Database, Zap, Settings, MoreVertical, Copy, Terminal
+  ChevronDown, ChevronUp, Database, Zap, Settings, MoreVertical, Copy, Terminal, FileText
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi } from '../api/projects'
@@ -22,6 +22,8 @@ import { ExampleBody } from '../components/shared/ExampleBody'
 import { TestEndpointModal } from '../components/shared/TestEndpointModal'
 import { DeleteServiceModal } from '../components/shared/DeleteServiceModal'
 import { SnapshotList } from '../components/deployment/SnapshotList'
+import LogsModal from '../components/logs/LogsModal'
+import DeploymentHistory from '../components/logs/DeploymentHistory'
 
 export const ServiceDetail = () => {
   const { id } = useParams()
@@ -208,6 +210,7 @@ export const ServiceDetail = () => {
   const [isExporting, setIsExporting] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [showActionsMenu, setShowActionsMenu] = useState(false)
+  const [showLogsModal, setShowLogsModal] = useState(false)
 
   const handleExportOpenAPI = async () => {
     setIsExporting(true)
@@ -403,6 +406,15 @@ export const ServiceDetail = () => {
                     <span>Refresh Status</span>
                   </button>
 
+                  {/* View Logs */}
+                  <button
+                    onClick={() => { setShowLogsModal(true); setShowActionsMenu(false) }}
+                    className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2.5"
+                  >
+                    <FileText className="w-4 h-4 text-gray-400" />
+                    <span>View Logs</span>
+                  </button>
+
                   <div className="border-t border-gray-100 my-1.5" />
 
                   {/* Export Options */}
@@ -563,6 +575,11 @@ export const ServiceDetail = () => {
         <SnapshotList projectId={id} onNotification={showNotification} />
       </div>
 
+      {/* Deployment History Section */}
+      <div className="mt-8">
+        <DeploymentHistory projectId={id} />
+      </div>
+
       {/* Entity Modal */}
       {showEntityModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
@@ -643,6 +660,13 @@ export const ServiceDetail = () => {
           isDeleting={destroyMutation.isPending}
         />
       )}
+
+      {/* Logs Modal */}
+      <LogsModal
+        projectId={id}
+        isOpen={showLogsModal}
+        onClose={() => setShowLogsModal(false)}
+      />
     </div>
   )
 }
