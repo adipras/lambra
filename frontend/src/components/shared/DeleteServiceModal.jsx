@@ -65,7 +65,11 @@ export const DeleteServiceModal = ({
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-red-500 mt-0.5">•</span>
-                    <span>All data from database</span>
+                    <span><strong>Service database will be DROPPED</strong> (all data lost)</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-red-500 mt-0.5">•</span>
+                    <span>All deployment history and snapshots</span>
                   </li>
                 </ul>
               </div>

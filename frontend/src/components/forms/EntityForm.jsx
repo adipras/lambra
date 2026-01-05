@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react'
-import { Plus, Trash2, X, Check, Database, Zap, Info, ToggleLeft, ToggleRight, GripVertical, AlertCircle } from 'lucide-react'
+import { Plus, Trash2, X, Check, Database, Zap, Info, ToggleLeft, ToggleRight, GripVertical, AlertCircle, Link2 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { entitiesApi } from '../../api/entities'
 
 const FIELD_TYPES = [
   { value: 'string', label: 'String', icon: 'Aa', color: 'bg-blue-100 text-blue-700' },
@@ -10,6 +12,20 @@ const FIELD_TYPES = [
   { value: 'date', label: 'Date', icon: 'D', color: 'bg-orange-100 text-orange-700' },
   { value: 'datetime', label: 'DateTime', icon: 'DT', color: 'bg-orange-100 text-orange-700' },
   { value: 'json', label: 'JSON', icon: '{}', color: 'bg-yellow-100 text-yellow-700' },
+  { value: 'relation', label: 'Relation', icon: '🔗', color: 'bg-pink-100 text-pink-700' },
+]
+
+const RELATION_TYPES = [
+  { value: 'belongsTo', label: 'Belongs To', description: 'This entity has FK to related entity (Many-to-One)', example: 'Post belongs to User' },
+  { value: 'hasOne', label: 'Has One', description: 'Related entity has FK to this entity (One-to-One)', example: 'User has one Profile' },
+  { value: 'hasMany', label: 'Has Many', description: 'Related entities have FK to this entity (One-to-Many)', example: 'User has many Posts' },
+  { value: 'manyToMany', label: 'Many to Many', description: 'Junction table connects both entities', example: 'Post has many Tags' },
+]
+
+const ON_DELETE_OPTIONS = [
+  { value: 'CASCADE', label: 'Cascade', description: 'Delete related records' },
+  { value: 'SET NULL', label: 'Set Null', description: 'Set FK to null' },
+  { value: 'RESTRICT', label: 'Restrict', description: 'Prevent deletion if related' },
 ]
 
 const ENDPOINT_OPTIONS = [
@@ -27,7 +43,7 @@ const METHOD_COLORS = {
   DELETE: 'bg-red-500',
 }
 
-export const EntityForm = ({ onSubmit, onCancel, initialData = null, isLoading = false }) => {
+export const EntityForm = ({ onSubmit, onCancel, initialData = null, isLoading = false, projectId = null }) => {
   const [formData, setFormData] = useState({
     name: initialData?.name || '',
     table_name: initialData?.table_name || '',
@@ -43,6 +59,18 @@ export const EntityForm = ({ onSubmit, onCancel, initialData = null, isLoading =
       delete: true,
     },
   })
+
+  // Fetch existing entities for relation dropdown
+  const { data: entitiesData } = useQuery({
+    queryKey: ['entities', projectId],
+    queryFn: () => entitiesApi.getByProject(projectId),
+    enabled: !!projectId,
+  })
+
+  // Filter out current entity from relation options
+  const availableEntities = (entitiesData?.data || []).filter(
+    e => e.id !== initialData?.id && e.name !== formData.name
+  )
 
   const [errors, setErrors] = useState({})
   const [activeFieldIndex, setActiveFieldIndex] = useState(null)
@@ -124,6 +152,15 @@ export const EntityForm = ({ onSubmit, onCancel, initialData = null, isLoading =
     if (!formData.name.trim()) newErrors.name = 'Entity name is required'
     if (!formData.table_name.trim()) newErrors.table_name = 'Table name is required'
     if (formData.fields.some(f => !f.name.trim())) newErrors.fields = 'All fields must have a name'
+
+    // Validate relation fields
+    const invalidRelation = formData.fields.find(f =>
+      f.type === 'relation' && (!f.relation_type || !f.related_entity)
+    )
+    if (invalidRelation) {
+      newErrors.fields = 'Relation fields must have relation type and related entity selected'
+    }
+
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
@@ -212,24 +249,14 @@ export const EntityForm = ({ onSubmit, onCancel, initialData = null, isLoading =
 
       {/* Fields Section */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <GripVertical className="w-5 h-5 text-green-600" />
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Fields</h3>
-              <p className="text-sm text-gray-500">{formData.fields.length} field(s) defined</p>
-            </div>
+        <div className="flex items-center gap-2">
+          <div className="p-2 bg-green-100 rounded-lg">
+            <GripVertical className="w-5 h-5 text-green-600" />
           </div>
-          <button
-            type="button"
-            onClick={addField}
-            className="btn btn-primary text-sm"
-          >
-            <Plus className="w-4 h-4 mr-1" />
-            Add Field
-          </button>
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Fields</h3>
+            <p className="text-sm text-gray-500">{formData.fields.length} field(s) defined</p>
+          </div>
         </div>
 
         {errors.fields && (
@@ -267,6 +294,11 @@ export const EntityForm = ({ onSubmit, onCancel, initialData = null, isLoading =
                       </p>
                       <div className="flex items-center gap-2 text-xs text-gray-500">
                         <span>{typeInfo.label}</span>
+                        {field.type === 'relation' && field.related_entity && (
+                          <span className="px-1.5 py-0.5 bg-pink-100 text-pink-700 rounded">
+                            → {field.related_entity}
+                          </span>
+                        )}
                         {field.required && (
                           <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded">Required</span>
                         )}
@@ -363,32 +395,154 @@ export const EntityForm = ({ onSubmit, onCancel, initialData = null, isLoading =
                       </div>
                     </div>
 
-                    <div className="flex gap-4 pt-2">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={field.required}
-                          onChange={(e) => handleFieldChange(index, 'required', e.target.checked)}
-                          className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
-                        />
-                        <span className="text-sm text-gray-700">Required field</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={field.unique}
-                          onChange={(e) => handleFieldChange(index, 'unique', e.target.checked)}
-                          className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
-                        />
-                        <span className="text-sm text-gray-700">Unique constraint</span>
-                      </label>
-                    </div>
+                    {/* Relation-specific options */}
+                    {field.type === 'relation' && (
+                      <div className="space-y-4 p-4 bg-pink-50 rounded-lg border border-pink-200">
+                        <div className="flex items-center gap-2 text-pink-700 font-medium">
+                          <Link2 className="w-4 h-4" />
+                          Relation Configuration
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">
+                              Relation Type <span className="text-red-500">*</span>
+                            </label>
+                            <select
+                              value={field.relation_type || ''}
+                              onChange={(e) => handleFieldChange(index, 'relation_type', e.target.value)}
+                              className="input text-sm"
+                            >
+                              <option value="">Select relation type...</option>
+                              {RELATION_TYPES.map(rt => (
+                                <option key={rt.value} value={rt.value}>{rt.label}</option>
+                              ))}
+                            </select>
+                            {field.relation_type && (
+                              <p className="text-xs text-gray-500 mt-1">
+                                {RELATION_TYPES.find(rt => rt.value === field.relation_type)?.description}
+                              </p>
+                            )}
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-medium text-gray-600 mb-1">
+                              Related Entity <span className="text-red-500">*</span>
+                            </label>
+                            <select
+                              value={field.related_entity || ''}
+                              onChange={(e) => handleFieldChange(index, 'related_entity', e.target.value)}
+                              className="input text-sm"
+                            >
+                              <option value="">Select entity...</option>
+                              {availableEntities.map(entity => (
+                                <option key={entity.id} value={entity.name}>{entity.name}</option>
+                              ))}
+                            </select>
+                            {availableEntities.length === 0 && (
+                              <p className="text-xs text-amber-600 mt-1">
+                                No other entities available. Create another entity first.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {(field.relation_type === 'belongsTo' || field.relation_type === 'manyToMany') && (
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">
+                                Foreign Key Column
+                              </label>
+                              <input
+                                type="text"
+                                value={field.foreign_key || ''}
+                                onChange={(e) => handleFieldChange(index, 'foreign_key', e.target.value)}
+                                className="input text-sm"
+                                placeholder={field.related_entity ? `${field.related_entity.toLowerCase()}_id` : 'Auto-generated'}
+                              />
+                              <p className="text-xs text-gray-500 mt-1">
+                                Leave empty for auto-generated name
+                              </p>
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">
+                                On Delete
+                              </label>
+                              <select
+                                value={field.on_delete || 'CASCADE'}
+                                onChange={(e) => handleFieldChange(index, 'on_delete', e.target.value)}
+                                className="input text-sm"
+                              >
+                                {ON_DELETE_OPTIONS.map(opt => (
+                                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        )}
+
+                        {field.relation_type && field.related_entity && (
+                          <div className="p-3 bg-white rounded border border-pink-200 text-sm">
+                            <p className="font-medium text-gray-700">Preview:</p>
+                            <p className="text-gray-600 mt-1">
+                              {field.relation_type === 'belongsTo' && (
+                                <><code className="bg-gray-100 px-1 rounded">{formData.name || 'This entity'}</code> belongs to <code className="bg-gray-100 px-1 rounded">{field.related_entity}</code> (FK: <code className="bg-gray-100 px-1 rounded">{field.foreign_key || `${field.related_entity.toLowerCase()}_id`}</code>)</>
+                              )}
+                              {field.relation_type === 'hasOne' && (
+                                <><code className="bg-gray-100 px-1 rounded">{formData.name || 'This entity'}</code> has one <code className="bg-gray-100 px-1 rounded">{field.related_entity}</code></>
+                              )}
+                              {field.relation_type === 'hasMany' && (
+                                <><code className="bg-gray-100 px-1 rounded">{formData.name || 'This entity'}</code> has many <code className="bg-gray-100 px-1 rounded">{field.related_entity}</code></>
+                              )}
+                              {field.relation_type === 'manyToMany' && (
+                                <><code className="bg-gray-100 px-1 rounded">{formData.name || 'This entity'}</code> ↔ <code className="bg-gray-100 px-1 rounded">{field.related_entity}</code> (junction table)</>
+                              )}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Standard field options (hide for relation type) */}
+                    {field.type !== 'relation' && (
+                      <div className="flex gap-4 pt-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={field.required}
+                            onChange={(e) => handleFieldChange(index, 'required', e.target.checked)}
+                            className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                          />
+                          <span className="text-sm text-gray-700">Required field</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={field.unique}
+                            onChange={(e) => handleFieldChange(index, 'unique', e.target.checked)}
+                            className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                          />
+                          <span className="text-sm text-gray-700">Unique constraint</span>
+                        </label>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             )
           })}
         </div>
+
+        {/* Add Field Button - at bottom for better UX */}
+        <button
+          type="button"
+          onClick={addField}
+          className="w-full py-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors flex items-center justify-center gap-2"
+        >
+          <Plus className="w-5 h-5" />
+          Add Field
+        </button>
       </div>
 
       {/* Generate Endpoints Section */}

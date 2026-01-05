@@ -12,51 +12,67 @@ const METHOD_COLORS = {
 }
 
 // Extract query parameters from request schema
-// Checks for x-parameter-style: query in schema
+// Checks for x-query-params (new format) or x-parameter-style: query (old format)
 const extractQueryParams = (schema) => {
-  if (!schema || schema['x-parameter-style'] !== 'query') {
-    return []
+  if (!schema) return []
+
+  // New format: x-query-params contains query param definitions
+  if (schema['x-query-params']) {
+    const queryParamsObj = schema['x-query-params']
+    return Object.entries(queryParamsObj).map(([name, prop]) => ({
+      name,
+      type: prop.type || 'string',
+      description: prop.description || '',
+      example: prop.example || '',
+      required: prop.required || false
+    }))
   }
 
-  const properties = schema.properties || {}
-  const required = schema.required || []
+  // Old format: x-parameter-style: query means all properties are query params
+  if (schema['x-parameter-style'] === 'query') {
+    const properties = schema.properties || {}
+    const required = schema.required || []
+    return Object.entries(properties).map(([name, prop]) => ({
+      name,
+      type: prop.type || 'string',
+      description: prop.description || '',
+      example: prop.example || '',
+      required: required.includes(name)
+    }))
+  }
 
-  return Object.entries(properties).map(([name, prop]) => ({
-    name,
-    type: prop.type || 'string',
-    description: prop.description || '',
-    example: prop.example || '',
-    required: required.includes(name)
-  }))
+  return []
 }
 
 // Extract body fields from schema (excluding query params)
 const extractBodySchema = (schema) => {
-  if (!schema || schema['x-parameter-style'] === 'query') {
+  if (!schema) return null
+
+  // If using old format with all query params, no body
+  if (schema['x-parameter-style'] === 'query' && !schema['x-query-params']) {
     return null
   }
 
-  // For merged schemas (query + body), separate them
-  // If schema has x-parameter-style but also has body fields
-  const properties = schema.properties || {}
-  const queryParams = ['id'] // Known query param names
-
-  const bodyProperties = {}
-  Object.entries(properties).forEach(([key, value]) => {
-    if (!queryParams.includes(key) || !value.description?.includes('query')) {
-      bodyProperties[key] = value
+  // New format: properties are body fields, x-query-params are separate
+  if (schema['x-query-params']) {
+    const properties = schema.properties || {}
+    if (Object.keys(properties).length === 0) {
+      return null
     }
-  })
+    return {
+      type: 'object',
+      properties: properties,
+      required: schema.required || []
+    }
+  }
 
-  if (Object.keys(bodyProperties).length === 0) {
+  // Regular body schema without query params
+  const properties = schema.properties || {}
+  if (Object.keys(properties).length === 0) {
     return null
   }
 
-  return {
-    ...schema,
-    properties: bodyProperties,
-    required: (schema.required || []).filter(r => !queryParams.includes(r))
-  }
+  return schema
 }
 
 export const TestEndpointModal = ({ endpoint, serviceUrl, onClose }) => {

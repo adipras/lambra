@@ -1,6 +1,6 @@
 # Lambra - Progress Tracker
 
-> **Last Updated:** 2026-01-02 (Query Params Migration - BSI UII Compliance)
+> **Last Updated:** 2026-01-05 (Rollback Bug Investigation)
 > **Current Phase:** Phase 4.2 - Deployment Logs (100% Complete ✅)
 > **Next Phase:** Phase 2.3 - GitLab Integration (Optional)
 > **Overall Progress:** 96% (Phase 1 + 1.5 + 2.1 + 2.2 + 2.4 + 3 + 3.5 + 3.6 + 4.1 + 4.2 complete)
@@ -1478,12 +1478,13 @@ curl -X POST http://localhost:8080/api/v1/projects \
 | 1.7.0 | 2025-12-31 | Phase 4.1 | Snapshot System & Rollback (50% Phase 4) ✅ |
 | 1.8.0 | 2026-01-02 | Phase 4.2 | Deployment Logs & SSE Streaming ✅ |
 | 1.8.1 | 2026-01-02 | Hotfix | Query Params Migration (BSI UII Compliance) ✅ |
+| 1.8.2 | 2026-01-05 | UX | Real-time Updates & UI Improvements ✅ |
 | 1.9.0 | TBD | Phase 2.3 | GitLab integration (optional) |
 
 ---
 
-**Last Review:** 2026-01-02 (Query Params Migration - BSI UII Compliance)
-**Next Review:** Phase 2.3 - GitLab Integration (Optional)
+**Last Review:** 2026-01-05 (Rollback Bug Investigation)
+**Next Review:** Fix Rollback + Redeploy Issue
 **Maintained By:** Development Team
 
 **Note for Next Session:**
@@ -1569,6 +1570,27 @@ curl -X POST http://localhost:8080/api/v1/projects \
     - Shows input fields for query parameters
     - Preview URL displays query string format
   - **Note**: Perlu restart Lambra dan redeploy existing services untuk menggunakan query params
+- ✅ Real-time Updates & UI Improvements (v1.8.2 - 2026-01-05)
+  - [x] **StatusIndicator** - Enhanced status indicator component
+    - Pulse animation for running/deploying states
+    - Better color coding (running=green, stopped=amber, not_deployed=gray, deploying=blue)
+    - Configurable sizes (sm, md, lg) and optional label
+  - [x] **DeployProgressModal** - Real-time deployment progress
+    - Step-by-step progress bar (init → snapshot → generate → write → build → start → complete)
+    - SSE streaming for live deployment logs
+    - Visual step indicators with animations
+    - Error handling and completion callbacks
+  - [x] **Skeleton Loaders** - Better loading states
+    - EntityCardSkeleton for entity list loading
+    - StatsCardSkeleton for stats cards loading
+    - Shimmer animation effect
+  - [x] **Optimistic Updates** - Faster UI feedback
+    - Create entity shows immediately with "Saving..." badge
+    - Delete entity removes immediately from list
+    - Automatic rollback on error
+    - Visual indicator for optimistic entities (pulse animation)
+  - [x] Stats cards now have hover shadow effect
+  - [x] Entity cards show loading spinner during optimistic creation
 - ⏳ Optional: GitLab Integration (Phase 2.3)
 - ⏳ Optional: Build & publish Docker images to registry
 - Docker services: MySQL on port 3307 (to avoid WSL conflict)
@@ -1606,6 +1628,61 @@ curl -X POST http://localhost:8080/api/v1/projects \
 7. ✅ Fixed DTO template DeletedAt type mismatch (sql.NullTime → *time.Time conversion)
 8. ✅ Fixed model Validate() for bool type (bool cannot be compared to nil)
 9. ✅ Fixed handler template unused import "models"
+
+---
+
+## 🐛 Open Issues (2026-01-05)
+
+### Issue: Rollback + Redeploy Build Failure (IN PROGRESS)
+
+**Status:** Under Investigation
+**Error:** `exit status 17` → Actually a build error in generated service
+**Symptom:** Rollback succeeds but redeployment fails
+
+**Root Cause Analysis:**
+The actual error from Docker build logs:
+```
+cmd/server/main.go:103:35: unitHandler.ListCategories undefined
+cmd/server/main.go:104:42: unitHandler.GetCategory undefined
+cmd/server/main.go:105:36: unitHandler.CreateCategory undefined
+cmd/server/main.go:106:42: unitHandler.UpdateCategory undefined
+cmd/server/main.go:107:45: unitHandler.DeleteCategory undefined
+```
+
+**Analysis:**
+1. After rollback, `main.go` has routes calling `unitHandler.ListCategories` etc.
+2. But the `unit_handler.go` only has methods like `ListUnits`, `GetUnit`, etc.
+3. This mismatch suggests:
+   - Either main.go route generation is using wrong data
+   - Or endpoint-entity association is corrupted during rollback
+   - Or handler file generation doesn't match route generation
+
+**Investigation Notes:**
+- `RollbackToSnapshot()` soft-deletes current entities (doesn't cascade to endpoints)
+- `generateGoFiles()` builds routes from `s.endpointRepo.GetByEntityID(entity.ID)`
+- `GenerateProjectByUUID()` generates handler files via templates
+- Both should read from same DB, but routes are mismatched with handler methods
+
+**Possible Causes:**
+1. Endpoints not properly soft-deleted when entities are soft-deleted
+2. entityIDMap mapping incorrect during endpoint restoration
+3. Handler template generates default CRUD methods, but routes use custom endpoint names
+4. Old handler files not deleted when entity is removed (file cleanup issue)
+
+**Files Involved:**
+- `backend/internal/service/snapshot_service.go` - RollbackToSnapshot function
+- `backend/internal/service/deployment_service.go` - generateGoFiles, RedeployService
+- `backend/internal/service/generator_service.go` - GenerateProjectByUUID
+- `backend/internal/generator/templates.go` - handlerTemplate
+
+**Next Steps:**
+1. Add better logging to track entity/endpoint IDs during rollback
+2. Check if endpoint soft-delete is needed when entity is soft-deleted
+3. Verify entityIDMap mapping is correct
+4. Consider deleting old generated files before regenerating (file cleanup)
+5. Test with fresh project to isolate the issue
+
+**Workaround:** None currently - need to investigate further
 
 ---
 

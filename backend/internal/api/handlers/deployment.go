@@ -21,6 +21,11 @@ func NewDeploymentHandler(service *service.DeploymentService) *DeploymentHandler
 	return &DeploymentHandler{service: service}
 }
 
+// DeployRequest represents deploy request body
+type DeployRequest struct {
+	ResetDatabase bool `json:"reset_database"`
+}
+
 // DeployProject deploys a project as a Docker service
 // POST /api/v1/projects/:id/deploy
 func (h *DeploymentHandler) DeployProject(c *gin.Context) {
@@ -30,7 +35,15 @@ func (h *DeploymentHandler) DeployProject(c *gin.Context) {
 		return
 	}
 
-	result, err := h.service.DeployProject(c.Request.Context(), projectID)
+	// Parse optional request body
+	var req DeployRequest
+	c.ShouldBindJSON(&req) // Ignore error - body is optional
+
+	opts := &service.DeployOptions{
+		ResetDatabase: req.ResetDatabase,
+	}
+
+	result, err := h.service.DeployProject(c.Request.Context(), projectID, opts)
 	if err != nil {
 		response.InternalError(c, "Failed to deploy project", err)
 		return

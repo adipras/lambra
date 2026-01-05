@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft, Plus, Trash2, Code, Play, Eye, X, FileCode, Check, AlertCircle,
@@ -15,12 +15,16 @@ import { exportApi } from '../api/export'
 import { LoadingSpinner } from '../components/shared/LoadingSpinner'
 import { ErrorAlert } from '../components/shared/ErrorAlert'
 import { StatusBadge } from '../components/shared/StatusBadge'
+import { StatusIndicator } from '../components/shared/StatusIndicator'
+import { EntityCardSkeleton, StatsCardSkeleton } from '../components/shared/Skeleton'
 import { EntityForm } from '../components/forms/EntityForm'
 import { EndpointForm } from '../components/forms/EndpointForm'
 import { CodeEditor } from '../components/code/CodeEditor'
 import { ExampleBody } from '../components/shared/ExampleBody'
 import { TestEndpointModal } from '../components/shared/TestEndpointModal'
 import { DeleteServiceModal } from '../components/shared/DeleteServiceModal'
+import { DeleteEntityModal } from '../components/shared/DeleteEntityModal'
+import { DeployProgressModal } from '../components/deployment/DeployProgressModal'
 import { SnapshotList } from '../components/deployment/SnapshotList'
 import LogsModal from '../components/logs/LogsModal'
 import DeploymentHistory from '../components/logs/DeploymentHistory'
@@ -49,15 +53,41 @@ export const ServiceDetail = () => {
     queryFn: () => entitiesApi.getByProject(id),
   })
 
-  // Create entity mutation
+  // Create entity mutation with optimistic update
   const createEntityMutation = useMutation({
     mutationFn: (data) => entitiesApi.create(id, data),
+    onMutate: async (newEntity) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries(['entities', id])
+
+      // Snapshot the previous value
+      const previousEntities = queryClient.getQueryData(['entities', id])
+
+      // Optimistically update to the new value
+      queryClient.setQueryData(['entities', id], (old) => {
+        const optimisticEntity = {
+          id: 'temp-' + Date.now(),
+          ...newEntity,
+          endpoints_count: newEntity.generate_endpoints ? 5 : 0,
+          _isOptimistic: true,
+        }
+        return {
+          ...old,
+          data: [...(old?.data || []), optimisticEntity],
+        }
+      })
+
+      // Return context with the snapshotted value
+      return { previousEntities }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries(['entities', id])
       setShowEntityModal(false)
       showNotification('success', 'Entity created successfully!')
     },
-    onError: (error) => {
+    onError: (error, newEntity, context) => {
+      // If the mutation fails, use the context returned from onMutate to roll back
+      queryClient.setQueryData(['entities', id], context.previousEntities)
       showNotification('error', error.response?.data?.message || 'Failed to create entity')
     },
   })
@@ -73,12 +103,32 @@ export const ServiceDetail = () => {
     },
   })
 
-  // Delete entity mutation
+  // Delete entity mutation with optimistic update
   const deleteEntityMutation = useMutation({
     mutationFn: (entityId) => entitiesApi.delete(entityId),
+    onMutate: async (entityId) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries(['entities', id])
+
+      // Snapshot the previous value
+      const previousEntities = queryClient.getQueryData(['entities', id])
+
+      // Optimistically remove from the list
+      queryClient.setQueryData(['entities', id], (old) => ({
+        ...old,
+        data: (old?.data || []).filter((e) => e.id !== entityId),
+      }))
+
+      return { previousEntities }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries(['entities', id])
       showNotification('success', 'Entity deleted successfully!')
+    },
+    onError: (error, entityId, context) => {
+      // Roll back on error
+      queryClient.setQueryData(['entities', id], context.previousEntities)
+      showNotification('error', error.response?.data?.message || 'Failed to delete entity')
     },
   })
 
@@ -140,17 +190,43 @@ export const ServiceDetail = () => {
 
   const deploymentStatus = statusData?.data
 
-  // Deploy mutation
+  // Deploy mutation with progress modal
   const deployMutation = useMutation({
-    mutationFn: () => deploymentApi.deploy(id),
+    mutationFn: (options = {}) => deploymentApi.deploy(id, options),
+    onMutate: () => {
+      // Show progress modal immediately
+      setShowDeployProgress(true)
+      setShowDeployOptions(false)
+    },
     onSuccess: (response) => {
-      showNotification('success', `Service deployed! URL: ${response.data?.data?.url || 'N/A'}`)
+      const deploymentId = response.data?.deployment_id
+      if (deploymentId) {
+        setCurrentDeploymentId(deploymentId)
+      }
+      showNotification('success', `Service deployed! URL: ${response.data?.url || 'N/A'}`)
       refetchStatus()
+      setResetDatabase(false) // Reset the checkbox
     },
     onError: (error) => {
+      setShowDeployProgress(false)
       showNotification('error', error.response?.data?.message || 'Failed to deploy service')
     },
   })
+
+  // Handle deploy with options
+  const handleDeploy = () => {
+    deployMutation.mutate({ reset_database: resetDatabase })
+  }
+
+  // Handle deploy progress completion
+  const handleDeployComplete = useCallback(() => {
+    refetchStatus()
+    queryClient.invalidateQueries(['deployments', id])
+    setTimeout(() => {
+      setShowDeployProgress(false)
+      setCurrentDeploymentId(null)
+    }, 1500)
+  }, [refetchStatus, queryClient, id])
 
   // Start mutation
   const startMutation = useMutation({
@@ -180,7 +256,7 @@ export const ServiceDetail = () => {
   const redeployMutation = useMutation({
     mutationFn: () => deploymentApi.redeploy(id),
     onSuccess: (response) => {
-      showNotification('success', `Service redeployed! URL: ${response.data?.data?.url || 'N/A'}`)
+      showNotification('success', `Service redeployed! URL: ${response.data?.url || 'N/A'}`)
       refetchStatus()
     },
     onError: (error) => {
@@ -209,8 +285,24 @@ export const ServiceDetail = () => {
 
   const [isExporting, setIsExporting] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [showDeployOptions, setShowDeployOptions] = useState(false)
+  const [resetDatabase, setResetDatabase] = useState(false)
   const [showActionsMenu, setShowActionsMenu] = useState(false)
   const [showLogsModal, setShowLogsModal] = useState(false)
+  const [showDeployProgress, setShowDeployProgress] = useState(false)
+  const [currentDeploymentId, setCurrentDeploymentId] = useState(null)
+  const [entityToDelete, setEntityToDelete] = useState(null)
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (showDeployOptions && !e.target.closest('.deploy-options-container')) {
+        setShowDeployOptions(false)
+      }
+    }
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
+  }, [showDeployOptions])
 
   const handleExportOpenAPI = async () => {
     setIsExporting(true)
@@ -247,9 +339,20 @@ export const ServiceDetail = () => {
   const project = projectData?.data
   const entities = entitiesData?.data || []
 
-  const handleDeleteEntity = (entityId) => {
-    if (window.confirm('Are you sure you want to delete this entity? All associated endpoints will also be deleted.')) {
-      deleteEntityMutation.mutate(entityId)
+  const handleDeleteEntity = (entity) => {
+    setEntityToDelete(entity)
+  }
+
+  const confirmDeleteEntity = () => {
+    if (entityToDelete) {
+      deleteEntityMutation.mutate(entityToDelete.id, {
+        onSuccess: () => {
+          setEntityToDelete(null)
+        },
+        onError: () => {
+          setEntityToDelete(null)
+        }
+      })
     }
   }
 
@@ -300,22 +403,12 @@ export const ServiceDetail = () => {
 
         {/* Action Buttons - Clean Layout */}
         <div className="flex items-center gap-2">
-          {/* Status Indicator */}
-          <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${
-            deploymentStatus?.status === 'running'
-              ? 'bg-green-100 text-green-700'
-              : deploymentStatus?.status === 'stopped'
-              ? 'bg-amber-100 text-amber-700'
-              : 'bg-gray-100 text-gray-600'
-          }`}>
-            <div className={`w-2 h-2 rounded-full ${
-              deploymentStatus?.status === 'running' ? 'bg-green-500 animate-pulse' :
-              deploymentStatus?.status === 'stopped' ? 'bg-amber-500' : 'bg-gray-400'
-            }`} />
-            <span className="capitalize">
-              {deploymentStatus?.status || 'Not Deployed'}
-            </span>
-          </div>
+          {/* Status Indicator - Enhanced */}
+          <StatusIndicator
+            status={isDeploying ? 'deploying' : (deploymentStatus?.status || 'not_deployed')}
+            size="md"
+            pulse={true}
+          />
 
           {/* Divider */}
           <div className="h-8 w-px bg-gray-200" />
@@ -342,15 +435,55 @@ export const ServiceDetail = () => {
                 <span>Start</span>
               </button>
             ) : (
-              <button
-                onClick={() => deployMutation.mutate()}
-                disabled={isDeploying || entities.length === 0}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-sm font-medium transition-colors disabled:opacity-50"
-                title={entities.length === 0 ? 'Add at least one entity first' : 'Deploy to Docker'}
-              >
-                {isDeploying ? <LoadingSpinner size="sm" /> : <Rocket className="w-3.5 h-3.5" />}
-                <span>Deploy</span>
-              </button>
+              <div className="relative deploy-options-container">
+                <div className="flex">
+                  <button
+                    onClick={handleDeploy}
+                    disabled={isDeploying || entities.length === 0}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-l-md text-sm font-medium transition-colors disabled:opacity-50"
+                    title={entities.length === 0 ? 'Add at least one entity first' : 'Deploy to Docker'}
+                  >
+                    {isDeploying ? <LoadingSpinner size="sm" /> : <Rocket className="w-3.5 h-3.5" />}
+                    <span>Deploy</span>
+                  </button>
+                  <button
+                    onClick={() => setShowDeployOptions(!showDeployOptions)}
+                    disabled={isDeploying || entities.length === 0}
+                    className="flex items-center px-2 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-r-md text-sm font-medium transition-colors disabled:opacity-50 border-l border-indigo-500"
+                    title="Deploy options"
+                  >
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                {/* Deploy Options Dropdown */}
+                {showDeployOptions && (
+                  <div className="absolute top-full left-0 mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
+                    <div className="px-3 py-2 border-b border-gray-100">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={resetDatabase}
+                          onChange={(e) => setResetDatabase(e.target.checked)}
+                          className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+                        />
+                        <div>
+                          <span className="text-sm font-medium text-gray-700">Reset Database</span>
+                          <p className="text-xs text-gray-500">Drop all tables before deploy</p>
+                        </div>
+                      </label>
+                    </div>
+                    <div className="px-3 py-2">
+                      <button
+                        onClick={handleDeploy}
+                        className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-sm font-medium transition-colors"
+                      >
+                        <Rocket className="w-4 h-4" />
+                        {resetDatabase ? 'Deploy with Reset' : 'Deploy'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
 
             {/* Open URL - only when running */}
@@ -456,56 +589,67 @@ export const ServiceDetail = () => {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-indigo-100 rounded-lg">
-              <Database className="w-5 h-5 text-indigo-600" />
+        {entitiesLoading ? (
+          <>
+            <StatsCardSkeleton />
+            <StatsCardSkeleton />
+            <StatsCardSkeleton />
+            <StatsCardSkeleton />
+          </>
+        ) : (
+          <>
+            <div className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-indigo-100 rounded-lg">
+                  <Database className="w-5 h-5 text-indigo-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-gray-900">{entities.length}</p>
+                  <p className="text-sm text-gray-500">Entities</p>
+                </div>
+              </div>
             </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900">{entities.length}</p>
-              <p className="text-sm text-gray-500">Entities</p>
+            <div className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-green-100 rounded-lg">
+                  <Zap className="w-5 h-5 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {entities.reduce((acc, e) => acc + (e.endpoints_count || 0), 0) || '-'}
+                  </p>
+                  <p className="text-sm text-gray-500">Endpoints</p>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-green-100 rounded-lg">
-              <Zap className="w-5 h-5 text-green-600" />
+            <div className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-purple-100 rounded-lg">
+                  <Terminal className="w-5 h-5 text-purple-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-gray-900 font-mono text-lg">
+                    {deploymentStatus?.port || '-'}
+                  </p>
+                  <p className="text-sm text-gray-500">Port</p>
+                </div>
+              </div>
             </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900">
-                {entities.reduce((acc, e) => acc + (e.endpoints_count || 0), 0) || '-'}
-              </p>
-              <p className="text-sm text-gray-500">Endpoints</p>
+            <div className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-orange-100 rounded-lg">
+                  <Settings className="w-5 h-5 text-orange-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-900 truncate max-w-[150px]" title={project?.namespace}>
+                    {project?.namespace}
+                  </p>
+                  <p className="text-sm text-gray-500">Namespace</p>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-purple-100 rounded-lg">
-              <Terminal className="w-5 h-5 text-purple-600" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900 font-mono text-lg">
-                {deploymentStatus?.port || '-'}
-              </p>
-              <p className="text-sm text-gray-500">Port</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-orange-100 rounded-lg">
-              <Settings className="w-5 h-5 text-orange-600" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-900 truncate max-w-[150px]" title={project?.namespace}>
-                {project?.namespace}
-              </p>
-              <p className="text-sm text-gray-500">Namespace</p>
-            </div>
-          </div>
-        </div>
+          </>
+        )}
       </div>
 
       {/* Entities Section */}
@@ -531,8 +675,9 @@ export const ServiceDetail = () => {
 
         <div className="p-5">
           {entitiesLoading ? (
-            <div className="flex justify-center py-12">
-              <LoadingSpinner size="lg" />
+            <div className="space-y-4">
+              <EntityCardSkeleton />
+              <EntityCardSkeleton />
             </div>
           ) : entities.length === 0 ? (
             <div className="text-center py-16">
@@ -560,7 +705,7 @@ export const ServiceDetail = () => {
                     setSelectedEntity(entity)
                     setShowEndpointModal(true)
                   }}
-                  onDelete={() => handleDeleteEntity(entity.id)}
+                  onDelete={() => handleDeleteEntity(entity)}
                   onDeleteEndpoint={handleDeleteEndpoint}
                   onPreview={() => handlePreview(entity)}
                 />
@@ -598,6 +743,7 @@ export const ServiceDetail = () => {
                 onSubmit={(data) => createEntityMutation.mutate(data)}
                 onCancel={() => setShowEntityModal(false)}
                 isLoading={createEntityMutation.isPending}
+                projectId={id}
               />
             </div>
           </div>
@@ -661,11 +807,36 @@ export const ServiceDetail = () => {
         />
       )}
 
+      {/* Delete Entity Modal */}
+      {entityToDelete && (
+        <DeleteEntityModal
+          entityName={entityToDelete.name}
+          tableName={entityToDelete.table_name}
+          endpointsCount={entityToDelete.endpoints_count || 0}
+          isDeployed={deploymentStatus?.status === 'running' || deploymentStatus?.status === 'stopped'}
+          onConfirm={confirmDeleteEntity}
+          onCancel={() => setEntityToDelete(null)}
+          isDeleting={deleteEntityMutation.isPending}
+        />
+      )}
+
       {/* Logs Modal */}
       <LogsModal
         projectId={id}
         isOpen={showLogsModal}
         onClose={() => setShowLogsModal(false)}
+      />
+
+      {/* Deploy Progress Modal */}
+      <DeployProgressModal
+        isOpen={showDeployProgress}
+        onClose={() => {
+          setShowDeployProgress(false)
+          setCurrentDeploymentId(null)
+        }}
+        projectId={id}
+        deploymentId={currentDeploymentId}
+        onComplete={handleDeployComplete}
       />
     </div>
   )
@@ -677,9 +848,12 @@ const EntityCard = ({ entity, onAddEndpoint, onDelete, onDeleteEndpoint, onPrevi
   const [selectedEndpoint, setSelectedEndpoint] = useState(null)
   const [testEndpoint, setTestEndpoint] = useState(null)
 
-  const { data: endpointsData } = useQuery({
+  const isOptimistic = entity._isOptimistic
+
+  const { data: endpointsData, isLoading: endpointsLoading } = useQuery({
     queryKey: ['entity-endpoints', entity.id],
     queryFn: () => endpointsApi.getByEntity(entity.id),
+    enabled: !isOptimistic, // Don't fetch endpoints for optimistic entities
   })
 
   const endpoints = endpointsData?.data || []
@@ -702,56 +876,72 @@ const EntityCard = ({ entity, onAddEndpoint, onDelete, onDeleteEndpoint, onPrevi
 
   return (
     <>
-      <div className="border border-gray-200 rounded-xl overflow-hidden hover:border-gray-300 transition-colors">
+      <div className={`border rounded-xl overflow-hidden transition-all duration-300 ${
+        isOptimistic
+          ? 'border-indigo-300 bg-indigo-50/50 animate-pulse'
+          : 'border-gray-200 hover:border-gray-300'
+      }`}>
         {/* Entity Header */}
         <div
-          className="flex items-center justify-between p-4 bg-gray-50 cursor-pointer"
-          onClick={() => setIsExpanded(!isExpanded)}
+          className={`flex items-center justify-between p-4 cursor-pointer ${isOptimistic ? 'bg-indigo-50' : 'bg-gray-50'}`}
+          onClick={() => !isOptimistic && setIsExpanded(!isExpanded)}
         >
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-white rounded-lg border border-gray-200">
-              <Database className="w-4 h-4 text-indigo-600" />
+            <div className={`p-2 rounded-lg border ${isOptimistic ? 'bg-indigo-100 border-indigo-200' : 'bg-white border-gray-200'}`}>
+              {isOptimistic ? (
+                <LoadingSpinner size="sm" />
+              ) : (
+                <Database className="w-4 h-4 text-indigo-600" />
+              )}
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-semibold text-gray-900">{entity.name}</h3>
-                <span className="text-xs px-2 py-0.5 bg-gray-200 text-gray-600 rounded-full">
-                  {endpoints.length} endpoints
-                </span>
+                {isOptimistic ? (
+                  <span className="text-xs px-2 py-0.5 bg-indigo-200 text-indigo-700 rounded-full animate-pulse">
+                    Saving...
+                  </span>
+                ) : (
+                  <span className="text-xs px-2 py-0.5 bg-gray-200 text-gray-600 rounded-full">
+                    {endpoints.length} endpoints
+                  </span>
+                )}
               </div>
               <p className="text-sm text-gray-500">
                 Table: <span className="font-mono text-xs">{entity.table_name}</span>
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={(e) => { e.stopPropagation(); onPreview() }}
-              className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-              title="Preview Code"
-            >
-              <Eye className="w-4 h-4" />
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onAddEndpoint() }}
-              className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-              title="Add Endpoint"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onDelete() }}
-              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-              title="Delete Entity"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-            {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-          </div>
+          {!isOptimistic && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={(e) => { e.stopPropagation(); onPreview() }}
+                className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                title="Preview Code"
+              >
+                <Eye className="w-4 h-4" />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); onAddEndpoint() }}
+                className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                title="Add Endpoint"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete() }}
+                className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                title="Delete Entity"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+              {isExpanded ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+            </div>
+          )}
         </div>
 
         {/* Expanded Content */}
-        {isExpanded && (
+        {isExpanded && !isOptimistic && (
           <div className="p-4 space-y-4">
             {/* Fields */}
             <div>

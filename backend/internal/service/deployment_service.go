@@ -13,6 +13,7 @@ import (
 	"text/template"
 	"time"
 
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/yourusername/lambra/internal/models"
 	"github.com/yourusername/lambra/internal/repository"
 )
@@ -77,8 +78,16 @@ type DeployResult struct {
 	InternalURL  string `json:"internal_url"`
 }
 
+// DeployOptions contains options for deployment
+type DeployOptions struct {
+	ResetDatabase bool `json:"reset_database"` // If true, drop all tables before creating
+}
+
 // DeployProject generates code and deploys the service
-func (s *DeploymentService) DeployProject(ctx context.Context, projectUUID string) (*DeployResult, error) {
+func (s *DeploymentService) DeployProject(ctx context.Context, projectUUID string, opts *DeployOptions) (*DeployResult, error) {
+	if opts == nil {
+		opts = &DeployOptions{}
+	}
 	// Get project
 	project, err := s.projectRepo.GetByUUID(projectUUID)
 	if err != nil {
@@ -114,6 +123,20 @@ func (s *DeploymentService) DeployProject(ctx context.Context, projectUUID strin
 
 	logStep(models.LogLevelInfo, fmt.Sprintf("Starting deployment for project: %s", project.Name), models.DeployStepInit)
 
+	// Get the previous snapshot to detect deleted entities
+	var tablesToDrop []string
+	if !opts.ResetDatabase {
+		previousSnapshot, _ := s.snapshotRepo.GetLatestByProjectID(project.ID)
+		if previousSnapshot != nil {
+			tablesToDrop = s.detectDeletedTables(previousSnapshot, project.ID)
+			if len(tablesToDrop) > 0 {
+				logStep(models.LogLevelInfo, fmt.Sprintf("Detected %d deleted tables: %v", len(tablesToDrop), tablesToDrop), models.DeployStepInit)
+			}
+		}
+	} else {
+		logStep(models.LogLevelInfo, "Reset database option enabled - all tables will be dropped", models.DeployStepInit)
+	}
+
 	// Auto-create snapshot before deployment
 	logStep(models.LogLevelInfo, "Creating snapshot...", models.DeployStepSnapshot)
 	snapshot, err := s.createSnapshot(project)
@@ -123,6 +146,12 @@ func (s *DeploymentService) DeployProject(ctx context.Context, projectUUID strin
 		logStep(models.LogLevelInfo, fmt.Sprintf("Snapshot created: %s (version %s)", snapshot.UUID, snapshot.Version), models.DeployStepSnapshot)
 		// Update deployment with snapshot ID
 		deployment.SnapshotID = sql.NullInt64{Int64: snapshot.ID, Valid: true}
+	}
+
+	// Prepare migration options
+	migOpts := &MigrationOptions{
+		ResetDatabase: opts.ResetDatabase,
+		TablesToDrop:  tablesToDrop,
 	}
 
 	serviceDir := filepath.Join(s.workspacePath, serviceName)
@@ -172,7 +201,7 @@ func (s *DeploymentService) DeployProject(ctx context.Context, projectUUID strin
 
 	// Generate main.go and go.mod
 	logStep(models.LogLevelInfo, "Generating Go files...", models.DeployStepDockerBuild)
-	if err := s.generateGoFiles(project, serviceDir, port); err != nil {
+	if err := s.generateGoFiles(project, serviceDir, port, migOpts); err != nil {
 		logStep(models.LogLevelError, fmt.Sprintf("Failed to generate Go files: %v", err), models.DeployStepDockerBuild)
 		s.deploymentRepo.SetFailed(deployment.UUID, err.Error())
 		return nil, fmt.Errorf("failed to generate Go files: %w", err)
@@ -278,6 +307,21 @@ func (s *DeploymentService) RedeployService(ctx context.Context, projectUUID str
 		return nil, fmt.Errorf("service not deployed, please deploy first")
 	}
 
+	// Detect deleted tables by comparing with latest snapshot
+	var tablesToDrop []string
+	previousSnapshot, _ := s.snapshotRepo.GetLatestByProjectID(project.ID)
+	if previousSnapshot != nil {
+		tablesToDrop = s.detectDeletedTables(previousSnapshot, project.ID)
+		if len(tablesToDrop) > 0 {
+			fmt.Printf("Redeploy: detected %d deleted tables: %v\n", len(tablesToDrop), tablesToDrop)
+		}
+	}
+
+	// Prepare migration options
+	migOpts := &MigrationOptions{
+		TablesToDrop: tablesToDrop,
+	}
+
 	// Stop and remove containers (docker compose down)
 	if err := s.destroyService(serviceDir); err != nil {
 		return nil, fmt.Errorf("failed to stop service: %w", err)
@@ -307,8 +351,8 @@ func (s *DeploymentService) RedeployService(ctx context.Context, projectUUID str
 		return nil, fmt.Errorf("failed to regenerate Docker files: %w", err)
 	}
 
-	// Regenerate main.go with routes
-	if err := s.generateGoFiles(project, serviceDir, port); err != nil {
+	// Regenerate main.go with routes and proper migration options
+	if err := s.generateGoFiles(project, serviceDir, port, migOpts); err != nil {
 		return nil, fmt.Errorf("failed to regenerate Go files: %w", err)
 	}
 
@@ -366,7 +410,7 @@ func (s *DeploymentService) GetServiceStatus(ctx context.Context, projectUUID st
 	return result, nil
 }
 
-// DestroyServiceCompletely stops containers, removes volumes, deletes workspace, and removes from database
+// DestroyServiceCompletely stops containers, removes volumes, deletes workspace, drops database, and removes from database
 func (s *DeploymentService) DestroyServiceCompletely(ctx context.Context, projectUUID string) error {
 	project, err := s.projectRepo.GetByUUID(projectUUID)
 	if err != nil {
@@ -389,21 +433,78 @@ func (s *DeploymentService) DestroyServiceCompletely(ctx context.Context, projec
 		}
 	}
 
-	// 3. Delete all endpoints for this project from database
+	// 3. Drop the generated service's database
+	if err := s.dropServiceDatabase(project); err != nil {
+		fmt.Printf("Warning: failed to drop service database: %v\n", err)
+	}
+
+	// 4. Delete all snapshots for this project from database
+	if err := s.snapshotRepo.HardDeleteByProjectID(project.ID); err != nil {
+		fmt.Printf("Warning: failed to delete snapshots: %v\n", err)
+	}
+
+	// 5. Delete all deployments for this project from database
+	if err := s.deploymentRepo.HardDeleteByProjectID(project.ID); err != nil {
+		fmt.Printf("Warning: failed to delete deployments: %v\n", err)
+	}
+
+	// 6. Delete all endpoints for this project from database
 	if err := s.endpointRepo.HardDeleteByProjectID(project.ID); err != nil {
 		fmt.Printf("Warning: failed to delete endpoints: %v\n", err)
 	}
 
-	// 4. Delete all entities for this project from database
+	// 7. Delete all entities for this project from database
 	if err := s.entityRepo.HardDeleteByProjectID(project.ID); err != nil {
 		fmt.Printf("Warning: failed to delete entities: %v\n", err)
 	}
 
-	// 5. Delete the project from database
+	// 8. Delete the project from database
 	if err := s.projectRepo.HardDeleteByUUID(projectUUID); err != nil {
 		return fmt.Errorf("failed to delete project from database: %w", err)
 	}
 
+	return nil
+}
+
+// dropServiceDatabase drops the database used by the generated service
+func (s *DeploymentService) dropServiceDatabase(project *models.Project) error {
+	// Skip if no database configured
+	if project.DBHost == "" || project.DBName == "" {
+		return nil
+	}
+
+	// Build DSN to connect to MySQL server (without specific database)
+	// Use host.docker.internal for connecting from Lambra backend container to MySQL
+	dbHost := project.DBHost
+	if dbHost == "lambra-mysql" || dbHost == "mysql" {
+		dbHost = "lambra-mysql" // Use Docker network name
+	}
+
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/",
+		project.DBUser,
+		project.DBPassword,
+		dbHost,
+		project.DBPort,
+	)
+
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return fmt.Errorf("failed to connect to MySQL: %w", err)
+	}
+	defer db.Close()
+
+	// Test connection
+	if err := db.Ping(); err != nil {
+		return fmt.Errorf("failed to ping MySQL: %w", err)
+	}
+
+	// Drop the database
+	dropSQL := fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", project.DBName)
+	if _, err := db.Exec(dropSQL); err != nil {
+		return fmt.Errorf("failed to drop database %s: %w", project.DBName, err)
+	}
+
+	fmt.Printf("Successfully dropped database: %s\n", project.DBName)
 	return nil
 }
 
@@ -495,7 +596,8 @@ func (s *DeploymentService) getPortForProject(projectID int64) int {
 }
 
 func (s *DeploymentService) startService(serviceDir string) error {
-	cmd := exec.Command("docker", "compose", "up", "-d", "--build")
+	// Use --force-recreate to avoid conflicts with existing containers
+	cmd := exec.Command("docker", "compose", "up", "-d", "--build", "--force-recreate", "--remove-orphans")
 	cmd.Dir = serviceDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -608,7 +710,16 @@ CMD ["./main"]
 	return nil
 }
 
-func (s *DeploymentService) generateGoFiles(project *models.Project, serviceDir string, port int) error {
+// MigrationOptions contains options for database migrations during code generation
+type MigrationOptions struct {
+	ResetDatabase bool     // Drop all tables before creating
+	TablesToDrop  []string // Specific tables to drop (deleted entities)
+}
+
+func (s *DeploymentService) generateGoFiles(project *models.Project, serviceDir string, port int, migOpts *MigrationOptions) error {
+	if migOpts == nil {
+		migOpts = &MigrationOptions{}
+	}
 	serviceName := toKebabCase(project.Name)
 
 	// Get entities for this project
@@ -646,6 +757,27 @@ require (
 	var routes strings.Builder
 	var migrations strings.Builder
 
+	// Generate DROP TABLE statements if needed
+	if migOpts.ResetDatabase {
+		// Drop all current entity tables in reverse order (to handle FK constraints)
+		for i := len(entities) - 1; i >= 0; i-- {
+			tableName := entities[i].TableName
+			migrations.WriteString(fmt.Sprintf("\t\t`DROP TABLE IF EXISTS %s`,\n", tableName))
+		}
+		// Also drop any junction tables
+		for _, entity := range entities {
+			junctionTables := s.getJunctionTableNames(entity)
+			for _, jt := range junctionTables {
+				migrations.WriteString(fmt.Sprintf("\t\t`DROP TABLE IF EXISTS %s`,\n", jt))
+			}
+		}
+	} else if len(migOpts.TablesToDrop) > 0 {
+		// Drop specific tables (deleted entities)
+		for _, tableName := range migOpts.TablesToDrop {
+			migrations.WriteString(fmt.Sprintf("\t\t`DROP TABLE IF EXISTS %s`,\n", tableName))
+		}
+	}
+
 	imports.WriteString(fmt.Sprintf("\t\"%s/repository\"\n", serviceName))
 	imports.WriteString(fmt.Sprintf("\t\"%s/service\"\n", serviceName))
 	imports.WriteString(fmt.Sprintf("\t\"%s/api/handlers\"\n", serviceName))
@@ -664,6 +796,10 @@ require (
 		// Generate migration SQL for this entity
 		migrationSQL := s.generateMigrationSQL(entity)
 		migrations.WriteString(migrationSQL)
+
+		// Generate junction tables for many-to-many relationships
+		junctionSQL := s.generateJunctionTableSQL(entity)
+		migrations.WriteString(junctionSQL)
 
 		// Get endpoints for this entity
 		endpoints, err := s.endpointRepo.GetByEntityID(entity.ID)
@@ -787,6 +923,7 @@ func (s *DeploymentService) generateMigrationSQL(entity models.Entity) string {
 	}
 
 	var sql strings.Builder
+	var foreignKeys []string
 	tableName := entity.TableName
 
 	sql.WriteString(fmt.Sprintf("\t\t`CREATE TABLE IF NOT EXISTS %s (\n", tableName))
@@ -794,6 +931,30 @@ func (s *DeploymentService) generateMigrationSQL(entity models.Entity) string {
 	sql.WriteString("\t\t\tuuid CHAR(36) NOT NULL UNIQUE,\n")
 
 	for _, field := range fields {
+		// Handle relation fields
+		if field.Type == "relation" {
+			// Only belongsTo creates a FK column in this entity
+			if field.RelationType == "belongsTo" {
+				fkColumn := field.GetForeignKeyColumn()
+				notNull := ""
+				if field.Required {
+					notNull = " NOT NULL"
+				}
+				sql.WriteString(fmt.Sprintf("\t\t\t%s BIGINT%s,\n", fkColumn, notNull))
+
+				// Add FK constraint
+				onDelete := field.OnDelete
+				if onDelete == "" {
+					onDelete = "CASCADE"
+				}
+				relatedTable := toSnakeCase(field.RelatedEntity) + "s"
+				foreignKeys = append(foreignKeys, fmt.Sprintf("\t\t\tFOREIGN KEY (%s) REFERENCES %s(id) ON DELETE %s", fkColumn, relatedTable, onDelete))
+			}
+			// hasOne, hasMany, manyToMany don't create columns here (FK is on the other side or in junction table)
+			continue
+		}
+
+		// Regular fields
 		columnName := toSnakeCase(field.Name)
 		columnType := s.getSQLType(field.Type, field.Length)
 		notNull := ""
@@ -811,10 +972,121 @@ func (s *DeploymentService) generateMigrationSQL(entity models.Entity) string {
 	sql.WriteString("\t\t\tupdated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n")
 	sql.WriteString("\t\t\tdeleted_at TIMESTAMP NULL DEFAULT NULL,\n")
 	sql.WriteString(fmt.Sprintf("\t\t\tINDEX idx_%s_uuid (uuid),\n", tableName))
-	sql.WriteString(fmt.Sprintf("\t\t\tINDEX idx_%s_deleted_at (deleted_at)\n", tableName))
-	sql.WriteString("\t\t)`,\n")
+	sql.WriteString(fmt.Sprintf("\t\t\tINDEX idx_%s_deleted_at (deleted_at)", tableName))
+
+	// Add FK constraints
+	for _, fk := range foreignKeys {
+		sql.WriteString(",\n")
+		sql.WriteString(fk)
+	}
+
+	sql.WriteString("\n\t\t)`,\n")
 
 	return sql.String()
+}
+
+// generateJunctionTableSQL generates CREATE TABLE for many-to-many relationships
+func (s *DeploymentService) generateJunctionTableSQL(entity models.Entity) string {
+	var fields []models.EntityField
+	if err := json.Unmarshal(entity.Fields, &fields); err != nil {
+		return ""
+	}
+
+	var sql strings.Builder
+	entityTable := entity.TableName
+
+	for _, field := range fields {
+		if field.Type == "relation" && field.RelationType == "manyToMany" {
+			relatedTable := toSnakeCase(field.RelatedEntity) + "s"
+
+			// Create junction table name (alphabetical order for consistency)
+			junctionTable := entityTable + "_" + relatedTable
+			if entityTable > relatedTable {
+				junctionTable = relatedTable + "_" + entityTable
+			}
+
+			entityFK := toSnakeCase(strings.TrimSuffix(entityTable, "s")) + "_id"
+			relatedFK := toSnakeCase(field.RelatedEntity) + "_id"
+
+			sql.WriteString(fmt.Sprintf("\t\t`CREATE TABLE IF NOT EXISTS %s (\n", junctionTable))
+			sql.WriteString(fmt.Sprintf("\t\t\t%s BIGINT NOT NULL,\n", entityFK))
+			sql.WriteString(fmt.Sprintf("\t\t\t%s BIGINT NOT NULL,\n", relatedFK))
+			sql.WriteString(fmt.Sprintf("\t\t\tPRIMARY KEY (%s, %s),\n", entityFK, relatedFK))
+			sql.WriteString(fmt.Sprintf("\t\t\tFOREIGN KEY (%s) REFERENCES %s(id) ON DELETE CASCADE,\n", entityFK, entityTable))
+			sql.WriteString(fmt.Sprintf("\t\t\tFOREIGN KEY (%s) REFERENCES %s(id) ON DELETE CASCADE\n", relatedFK, relatedTable))
+			sql.WriteString("\t\t)`,\n")
+		}
+	}
+
+	return sql.String()
+}
+
+// getJunctionTableNames returns junction table names for many-to-many relations in an entity
+func (s *DeploymentService) getJunctionTableNames(entity models.Entity) []string {
+	var fields []models.EntityField
+	if err := json.Unmarshal(entity.Fields, &fields); err != nil {
+		return nil
+	}
+
+	var tables []string
+	entityTable := entity.TableName
+
+	for _, field := range fields {
+		if field.Type == "relation" && field.RelationType == "manyToMany" {
+			relatedTable := toSnakeCase(field.RelatedEntity) + "s"
+
+			// Create junction table name (alphabetical order for consistency)
+			junctionTable := entityTable + "_" + relatedTable
+			if entityTable > relatedTable {
+				junctionTable = relatedTable + "_" + entityTable
+			}
+			tables = append(tables, junctionTable)
+		}
+	}
+
+	return tables
+}
+
+// detectDeletedTables compares previous snapshot with current entities to find deleted tables
+func (s *DeploymentService) detectDeletedTables(previousSnapshot *models.GenerationSnapshot, projectID int64) []string {
+	var tablesToDrop []string
+
+	// Parse previous snapshot metadata
+	var previousMetadata models.SnapshotMetadata
+	if err := json.Unmarshal(previousSnapshot.Metadata, &previousMetadata); err != nil {
+		return nil
+	}
+
+	// Get current entities
+	currentEntities, err := s.entityRepo.GetByProjectID(projectID)
+	if err != nil {
+		return nil
+	}
+
+	// Create map of current table names
+	currentTables := make(map[string]bool)
+	for _, entity := range currentEntities {
+		currentTables[entity.TableName] = true
+		// Also add junction tables
+		for _, jt := range s.getJunctionTableNames(entity) {
+			currentTables[jt] = true
+		}
+	}
+
+	// Find tables that existed in previous snapshot but not in current entities
+	for _, prevEntity := range previousMetadata.Entities {
+		if !currentTables[prevEntity.TableName] {
+			tablesToDrop = append(tablesToDrop, prevEntity.TableName)
+		}
+		// Check for junction tables from previous entities
+		for _, jt := range s.getJunctionTableNames(prevEntity) {
+			if !currentTables[jt] {
+				tablesToDrop = append(tablesToDrop, jt)
+			}
+		}
+	}
+
+	return tablesToDrop
 }
 
 // getSQLType converts field type to MySQL type

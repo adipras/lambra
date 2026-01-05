@@ -96,11 +96,12 @@ func (r *EntityRepository) GetByID(id int64) (*models.Entity, error) {
 func (r *EntityRepository) GetByProjectID(projectID int64) ([]models.Entity, error) {
 	var entities []models.Entity
 	query := `
-		SELECT id, uuid, project_id, name, table_name, description, fields,
-		       created_by, updated_by, deleted_by, created_at, updated_at, deleted_at
-		FROM entities
-		WHERE project_id = ? AND deleted_at IS NULL
-		ORDER BY created_at ASC
+		SELECT e.id, e.uuid, e.project_id, e.name, e.table_name, e.description, e.fields,
+		       e.created_by, e.updated_by, e.deleted_by, e.created_at, e.updated_at, e.deleted_at,
+		       COALESCE((SELECT COUNT(*) FROM endpoints ep WHERE ep.entity_id = e.id AND ep.deleted_at IS NULL), 0) as endpoints_count
+		FROM entities e
+		WHERE e.project_id = ? AND e.deleted_at IS NULL
+		ORDER BY e.created_at ASC
 	`
 
 	err := r.db.Select(&entities, query, projectID)

@@ -88,6 +88,7 @@ func (s *EntityService) generateCRUDEndpoints(entity *models.Entity, projectID i
 
 	// Generate query param schema for id parameter
 	idQueryParamSchema := s.generateIDQueryParamSchema()
+	updateRequestSchema := s.generateUpdateRequestSchema(fields)
 
 	endpoints := []struct {
 		enabled        bool
@@ -101,7 +102,7 @@ func (s *EntityService) generateCRUDEndpoints(entity *models.Entity, projectID i
 		{opts.List, "List" + entityNamePlural, "GET", basePath, fmt.Sprintf("Get all %s", strings.ToLower(entityNamePlural)), nil, listResponseSchema},
 		{opts.Get, "Get" + entityName, "GET", basePath + "/detail", fmt.Sprintf("Get %s by ID (query param: id)", entityNameLower), idQueryParamSchema, responseSchema},
 		{opts.Create, "Create" + entityName, "POST", basePath, fmt.Sprintf("Create a new %s", entityNameLower), requestSchema, responseSchema},
-		{opts.Update, "Update" + entityName, "PUT", basePath + "/update", fmt.Sprintf("Update %s by ID (query param: id)", entityNameLower), s.mergeSchemas(idQueryParamSchema, requestSchema), responseSchema},
+		{opts.Update, "Update" + entityName, "PUT", basePath + "/update", fmt.Sprintf("Update %s by ID (query param: id), body for partial update", entityNameLower), updateRequestSchema, responseSchema},
 		{opts.Delete, "Delete" + entityName, "DELETE", basePath + "/delete", fmt.Sprintf("Delete %s by ID (query param: id)", entityNameLower), idQueryParamSchema, s.generateDeleteResponseSchema()},
 	}
 
@@ -264,6 +265,46 @@ func (s *EntityService) generateIDQueryParamSchema() json.RawMessage {
 		},
 		"required":          []string{"id"},
 		"x-parameter-style": "query",
+	}
+
+	data, _ := json.Marshal(schema)
+	return data
+}
+
+// generateUpdateRequestSchema creates JSON schema for update request
+// It separates query params (id) from body fields
+func (s *EntityService) generateUpdateRequestSchema(fields []models.EntityField) json.RawMessage {
+	bodyProperties := make(map[string]interface{})
+
+	for _, field := range fields {
+		// Skip relation fields for now
+		if field.Type == "relation" {
+			continue
+		}
+
+		prop := map[string]interface{}{
+			"type":        fieldTypeToJSONType(field.Type),
+			"description": field.Description,
+		}
+		if field.Type == "string" && field.Length > 0 {
+			prop["maxLength"] = field.Length
+		}
+		bodyProperties[field.Name] = prop
+	}
+
+	schema := map[string]interface{}{
+		"type":       "object",
+		"properties": bodyProperties,
+		// x-query-params: fields that should be query params
+		"x-query-params": map[string]interface{}{
+			"id": map[string]interface{}{
+				"type":        "string",
+				"description": "ID of the resource to update",
+				"example":     "550e8400-e29b-41d4-a716-446655440000",
+				"required":    true,
+			},
+		},
+		// Note: body fields are all optional for partial update
 	}
 
 	data, _ := json.Marshal(schema)
