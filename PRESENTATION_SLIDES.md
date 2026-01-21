@@ -84,23 +84,26 @@ Generate Complete Golang Microservices in Minutes
 
 ---
 
-## SLIDE 5: Key Feature #1 - Visual Entity Builder
+## SLIDE 5: Key Feature #1 - Visual Database Diagram ✨ NEW!
 
-### Design Entities via UI
+### Interactive Database Visualization
 
-✓ **9 Data Types**  
-  String, Text, Integer, Float, Boolean, Date, DateTime, JSON, Relation
+✓ **Entity Boxes**  
+  Visual representation with fields, types, and badges
 
-✓ **Field Constraints**  
-  Required, Unique, Max Length, Description
+✓ **Relation Lines**  
+  Color-coded connections (pink, purple, blue, orange)
 
-✓ **Entity Relations**  
-  belongsTo, hasOne, hasMany, manyToMany
+✓ **Interactive Canvas**  
+  Drag entities, zoom, pan, auto-layout
 
-✓ **Real-time Preview**  
-  See schema before generate
+✓ **Two View Modes**  
+  Toggle between List View and Diagram View
 
-**Visual:** Screenshot EntityForm component
+✓ **Real-time Interaction**  
+  Click field for details, visual feedback
+
+**Visual:** Screenshot of Diagram View with multiple entities connected
 
 ---
 

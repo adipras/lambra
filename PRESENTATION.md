@@ -104,12 +104,15 @@ Lambra hadir untuk mengatasi masalah tersebut dengan pendekatan **low-code** - g
 
 ## 📋 Slide 4: Key Features - Part 1
 
-**1. Visual Entity Builder**
-- Drag-and-drop interface untuk design entities
-- Support 9 tipe data: String, Text, Integer, Float, Boolean, Date, DateTime, JSON, Relation
-- Field constraints: required, unique, max length
-- Entity relations dengan 4 jenis: belongsTo, hasOne, hasMany, manyToMany
-- Preview schema secara real-time
+**1. Visual Database Diagram** ✨ NEW!
+- Interactive database diagram like dbdiagram.io/Navicat
+- Entity boxes showing all fields with type icons
+- Visual relation lines (color-coded by type)
+- Drag entities to reposition
+- Zoom, pan, and auto-layout controls
+- Toggle between List View and Diagram View
+- Click field to view details
+- Real-time canvas interaction
 
 **2. Smart Code Generator**
 - Template engine dengan 30+ helper functions (case conversion, pluralization, type mapping)
