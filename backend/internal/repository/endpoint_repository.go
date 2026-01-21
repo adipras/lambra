@@ -173,6 +173,16 @@ func (r *EndpointRepository) DeleteByUUID(uuid string, deletedBy string) error {
 	return nil
 }
 
+// SoftDeleteByEntityID soft deletes all endpoints for an entity
+func (r *EndpointRepository) SoftDeleteByEntityID(entityID int64, deletedBy string) error {
+	query := `UPDATE endpoints SET deleted_at = NOW(), deleted_by = ? WHERE entity_id = ? AND deleted_at IS NULL`
+	_, err := r.db.Exec(query, deletedBy, entityID)
+	if err != nil {
+		return fmt.Errorf("failed to soft delete endpoints: %w", err)
+	}
+	return nil
+}
+
 // HardDeleteByEntityID permanently deletes all endpoints for an entity
 func (r *EndpointRepository) HardDeleteByEntityID(entityID int64) error {
 	query := `DELETE FROM endpoints WHERE entity_id = ?`

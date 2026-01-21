@@ -516,14 +516,20 @@ func (s *DeploymentService) createSnapshot(project *models.Project) (*models.Gen
 		return nil, fmt.Errorf("failed to get entities: %w", err)
 	}
 
-	// Get all endpoints for each entity
-	var allEndpoints []models.Endpoint
+	// Get all endpoints for each entity with entity name for mapping during rollback
+	var allEndpoints []models.SnapshotEndpoint
 	for _, entity := range entities {
 		endpoints, err := s.endpointRepo.GetByEntityID(entity.ID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get endpoints for entity %s: %w", entity.Name, err)
 		}
-		allEndpoints = append(allEndpoints, endpoints...)
+		// Wrap each endpoint with entity name for proper mapping during rollback
+		for _, ep := range endpoints {
+			allEndpoints = append(allEndpoints, models.SnapshotEndpoint{
+				Endpoint:   ep,
+				EntityName: entity.Name,
+			})
+		}
 	}
 
 	// Create snapshot metadata
@@ -808,9 +814,14 @@ require (
 		}
 
 		// Generate routes for each endpoint
+		// IMPORTANT: Handler method names must match the template-generated methods
+		// which are based on entity name, not endpoint name.
+		// Map HTTP method to handler method based on entity name.
+		entityNamePlural := pluralize(entityNamePascal)
 		for _, endpoint := range endpoints {
-			// Convert endpoint name to valid Go method name (PascalCase, no spaces)
-			handlerMethod := toPascalCase(endpoint.Name)
+			// Derive handler method from HTTP method + entity name (not endpoint.Name)
+			// This ensures routes call methods that actually exist in the generated handler
+			handlerMethod := s.deriveHandlerMethod(endpoint.Method, endpoint.Path, entityNamePascal, entityNamePlural)
 			routes.WriteString(fmt.Sprintf("\tr.%s(\"%s\", %sHandler.%s)\n",
 				endpoint.Method, endpoint.Path, entityNameLower, handlerMethod))
 		}
@@ -818,7 +829,6 @@ require (
 		// Add default CRUD routes if no endpoints exist (using query params per BSI UII rules)
 		if len(endpoints) == 0 {
 			basePath := "/" + entityNameSnake + "s"
-			entityNamePlural := pluralize(entityNamePascal)
 			routes.WriteString(fmt.Sprintf("\tr.GET(\"%s\", %sHandler.List%s)\n", basePath, entityNameLower, entityNamePlural))
 			routes.WriteString(fmt.Sprintf("\tr.GET(\"%s/detail\", %sHandler.Get%s)\n", basePath, entityNameLower, entityNamePascal))
 			routes.WriteString(fmt.Sprintf("\tr.POST(\"%s\", %sHandler.Create%s)\n", basePath, entityNameLower, entityNamePascal))
@@ -1354,4 +1364,29 @@ func (s *DeploymentService) StreamContainerLogs(ctx context.Context, projectUUID
 	// Create command to stream logs
 	cmd := exec.CommandContext(ctx, "docker", "logs", "-f", "--tail", "100", serviceName)
 	return cmd, nil
+}
+
+// deriveHandlerMethod derives the handler method name from HTTP method and entity name
+// This ensures routes call methods that actually exist in the generated handler template
+// Handler template generates: List{Plural}, Get{Entity}, Create{Entity}, Update{Entity}, Delete{Entity}
+func (s *DeploymentService) deriveHandlerMethod(httpMethod, path, entityName, entityNamePlural string) string {
+	switch httpMethod {
+	case "GET":
+		// Check if it's a list or single item endpoint
+		// List: /entities, /entities/
+		// Detail: /entities/detail, /entities/:id, /entities/{id}
+		if strings.Contains(path, "/detail") || strings.Contains(path, "/:") || strings.Contains(path, "/{") {
+			return "Get" + entityName
+		}
+		return "List" + entityNamePlural
+	case "POST":
+		return "Create" + entityName
+	case "PUT", "PATCH":
+		return "Update" + entityName
+	case "DELETE":
+		return "Delete" + entityName
+	default:
+		// Fallback to entity-based name
+		return "Handle" + entityName
+	}
 }

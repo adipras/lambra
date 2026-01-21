@@ -325,6 +325,7 @@ func (s *{{ .EntityName }}Service) Delete(ctx context.Context, id int64) error {
 `
 
 // Handler template
+// NOTE: All handlers accept ONLY UUID as "id" - internal int64 IDs are never exposed or accepted
 const handlerTemplate = `package handlers
 
 import (
@@ -366,7 +367,7 @@ func (h *{{ .EntityName }}Handler) Create{{ .EntityName }}(c *gin.Context) {
 	c.JSON(http.StatusCreated, dto.{{ .EntityName }}Response{}.FromModel({{ .EntityNameLC }}))
 }
 
-// Get{{ .EntityName }} retrieves a {{ toLower .EntityName }} by ID (query param)
+// Get{{ .EntityName }} retrieves a {{ toLower .EntityName }} by UUID (query param: id)
 func (h *{{ .EntityName }}Handler) Get{{ .EntityName }}(c *gin.Context) {
 	idStr := c.Query("id")
 	if idStr == "" {
@@ -374,25 +375,14 @@ func (h *{{ .EntityName }}Handler) Get{{ .EntityName }}(c *gin.Context) {
 		return
 	}
 
-	// Try as UUID first
-	if id, err := uuid.Parse(idStr); err == nil {
-		{{ .EntityNameLC }}, err := h.service.GetByUUID(c.Request.Context(), id)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "{{ .EntityName }} not found"})
-			return
-		}
-		c.JSON(http.StatusOK, dto.{{ .EntityName }}Response{}.FromModel({{ .EntityNameLC }}))
-		return
-	}
-
-	// Try as integer ID
-	id, err := strconv.ParseInt(idStr, 10, 64)
+	// Parse as UUID - only UUID is accepted
+	id, err := uuid.Parse(idStr)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid UUID format"})
 		return
 	}
 
-	{{ .EntityNameLC }}, err := h.service.GetByID(c.Request.Context(), id)
+	{{ .EntityNameLC }}, err := h.service.GetByUUID(c.Request.Context(), id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "{{ .EntityName }} not found"})
 		return
@@ -425,11 +415,18 @@ func (h *{{ .EntityName }}Handler) List{{ pluralize .EntityName }}(c *gin.Contex
 	})
 }
 
-// Update{{ .EntityName }} updates a {{ toLower .EntityName }} (query param: id)
+// Update{{ .EntityName }} updates a {{ toLower .EntityName }} by UUID (query param: id)
 func (h *{{ .EntityName }}Handler) Update{{ .EntityName }}(c *gin.Context) {
 	idStr := c.Query("id")
 	if idStr == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Query parameter 'id' is required"})
+		return
+	}
+
+	// Parse as UUID - only UUID is accepted
+	uuidVal, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid UUID format"})
 		return
 	}
 
@@ -441,37 +438,30 @@ func (h *{{ .EntityName }}Handler) Update{{ .EntityName }}(c *gin.Context) {
 
 	{{ .EntityNameLC }} := req.ToModel()
 
-	// Try as UUID first
-	if uuidVal, err := uuid.Parse(idStr); err == nil {
-		existing, err := h.service.GetByUUID(c.Request.Context(), uuidVal)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "{{ .EntityName }} not found"})
-			return
-		}
-		if err := h.service.Update(c.Request.Context(), existing.ID, {{ .EntityNameLC }}); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusOK, dto.{{ .EntityName }}Response{}.FromModel({{ .EntityNameLC }}))
-		return
-	}
-
-	// Try as integer ID
-	id, err := strconv.ParseInt(idStr, 10, 64)
+	// Get existing record by UUID to get internal ID
+	existing, err := h.service.GetByUUID(c.Request.Context(), uuidVal)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "{{ .EntityName }} not found"})
 		return
 	}
 
-	if err := h.service.Update(c.Request.Context(), id, {{ .EntityNameLC }}); err != nil {
+	// Update using internal ID
+	if err := h.service.Update(c.Request.Context(), existing.ID, {{ .EntityNameLC }}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, dto.{{ .EntityName }}Response{}.FromModel({{ .EntityNameLC }}))
+	// Fetch updated record to return
+	updated, err := h.service.GetByUUID(c.Request.Context(), uuidVal)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, dto.{{ .EntityName }}Response{}.FromModel(updated))
 }
 
-// Delete{{ .EntityName }} deletes a {{ toLower .EntityName }} (query param: id)
+// Delete{{ .EntityName }} deletes a {{ toLower .EntityName }} by UUID (query param: id)
 func (h *{{ .EntityName }}Handler) Delete{{ .EntityName }}(c *gin.Context) {
 	idStr := c.Query("id")
 	if idStr == "" {
@@ -479,29 +469,22 @@ func (h *{{ .EntityName }}Handler) Delete{{ .EntityName }}(c *gin.Context) {
 		return
 	}
 
-	// Try as UUID first
-	if uuidVal, err := uuid.Parse(idStr); err == nil {
-		existing, err := h.service.GetByUUID(c.Request.Context(), uuidVal)
-		if err != nil {
-			c.JSON(http.StatusNotFound, gin.H{"error": "{{ .EntityName }} not found"})
-			return
-		}
-		if err := h.service.Delete(c.Request.Context(), existing.ID); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"message": "Successfully deleted"})
-		return
-	}
-
-	// Try as integer ID
-	id, err := strconv.ParseInt(idStr, 10, 64)
+	// Parse as UUID - only UUID is accepted
+	uuidVal, err := uuid.Parse(idStr)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID format"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid UUID format"})
 		return
 	}
 
-	if err := h.service.Delete(c.Request.Context(), id); err != nil {
+	// Get existing record by UUID to get internal ID
+	existing, err := h.service.GetByUUID(c.Request.Context(), uuidVal)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "{{ .EntityName }} not found"})
+		return
+	}
+
+	// Delete using internal ID
+	if err := h.service.Delete(c.Request.Context(), existing.ID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -521,43 +504,62 @@ import (
 )
 
 // Create{{ .EntityName }}Request represents a request to create a {{ toLower .EntityName }}
+// NOTE: FK fields use UUID (e.g., category_uuid) - translation to internal ID happens in handler
 type Create{{ .EntityName }}Request struct {
 {{- range .Fields }}
+{{- if .IsForeignKey }}
+	{{ .FKName }} string ` + "`" + `{{ .FKJSONTag }}{{ if .ValidateTag }} {{ .ValidateTag }}{{ end }}` + "`" + ` // UUID of related entity
+{{- else }}
 	{{ .Name }} {{ .GoType }} ` + "`" + `{{ .JSONTag }}{{ if .ValidateTag }} {{ .ValidateTag }}{{ end }}` + "`" + `
+{{- end }}
 {{- end }}
 }
 
-// ToModel converts the request to a model
+// ToModel converts the request to a model (FK fields need UUID→ID translation in handler)
 func (r Create{{ .EntityName }}Request) ToModel() *models.{{ .EntityName }} {
 	return &models.{{ .EntityName }}{
 {{- range .Fields }}
+{{- if not .IsForeignKey }}
 		{{ .Name }}: r.{{ .Name }},
+{{- end }}
 {{- end }}
 	}
 }
 
 // Update{{ .EntityName }}Request represents a request to update a {{ toLower .EntityName }}
+// NOTE: FK fields use UUID (e.g., category_uuid) - translation to internal ID happens in handler
 type Update{{ .EntityName }}Request struct {
 {{- range .Fields }}
+{{- if .IsForeignKey }}
+	{{ .FKName }} string ` + "`" + `{{ .FKJSONTag }}{{ if .ValidateTag }} {{ .ValidateTag }}{{ end }}` + "`" + ` // UUID of related entity
+{{- else }}
 	{{ .Name }} {{ .GoType }} ` + "`" + `{{ .JSONTag }}{{ if .ValidateTag }} {{ .ValidateTag }}{{ end }}` + "`" + `
+{{- end }}
 {{- end }}
 }
 
-// ToModel converts the request to a model
+// ToModel converts the request to a model (FK fields need UUID→ID translation in handler)
 func (r Update{{ .EntityName }}Request) ToModel() *models.{{ .EntityName }} {
 	return &models.{{ .EntityName }}{
 {{- range .Fields }}
+{{- if not .IsForeignKey }}
 		{{ .Name }}: r.{{ .Name }},
+{{- end }}
 {{- end }}
 	}
 }
 
 // {{ .EntityName }}Response represents a {{ toLower .EntityName }} response
+// NOTE: Only UUID is exposed - internal int64 ID is never exposed to frontend
+// NOTE: FK fields are exposed as UUID (e.g., category_uuid instead of category_id)
 type {{ .EntityName }}Response struct {
-	ID        int64     ` + "`json:\"id\"`" + `
-	UUID      uuid.UUID ` + "`json:\"uuid\"`" + `
+	UUID      uuid.UUID  ` + "`json:\"uuid\"`" + ` // UUID for frontend (internal int64 ID is hidden)
 {{- range .Fields }}
+{{- if .IsForeignKey }}
+	{{ .FKName }} string ` + "`" + `{{ .FKJSONTag }}` + "`" + ` // UUID of related entity
+{{- else }}
 	{{ .Name }} {{ .GoType }} ` + "`" + `{{ .JSONTag }}` + "`" + `
+{{- end }}
 {{- end }}
 	CreatedAt time.Time  ` + "`json:\"created_at\"`" + `
 	UpdatedAt time.Time  ` + "`json:\"updated_at\"`" + `
@@ -565,6 +567,7 @@ type {{ .EntityName }}Response struct {
 }
 
 // FromModel converts a model to a response
+// NOTE: FK fields need ID→UUID translation (lookup related entity's UUID by ID)
 func (r {{ .EntityName }}Response) FromModel({{ .EntityNameLC }} *models.{{ .EntityName }}) {{ .EntityName }}Response {
 	var deletedAt *time.Time
 	if {{ .EntityNameLC }}.DeletedAt.Valid {
@@ -572,10 +575,14 @@ func (r {{ .EntityName }}Response) FromModel({{ .EntityNameLC }} *models.{{ .Ent
 	}
 
 	return {{ .EntityName }}Response{
-		ID:        {{ .EntityNameLC }}.ID,
-		UUID:      {{ .EntityNameLC }}.UUID,
+		UUID:      {{ .EntityNameLC }}.UUID, // UUID for frontend, internal ID stays hidden
 {{- range .Fields }}
+{{- if .IsForeignKey }}
+		// TODO: {{ .FKName }} needs ID→UUID translation (lookup related entity by {{ .Name }})
+		{{ .FKName }}: "", // Placeholder - needs translation from {{ .Name }} (int64) to UUID
+{{- else }}
 		{{ .Name }}: {{ $.EntityNameLC }}.{{ .Name }},
+{{- end }}
 {{- end }}
 		CreatedAt: {{ .EntityNameLC }}.CreatedAt,
 		UpdatedAt: {{ .EntityNameLC }}.UpdatedAt,

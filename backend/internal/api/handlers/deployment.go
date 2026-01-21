@@ -354,7 +354,7 @@ func (h *DeploymentHandler) StreamContainerLogs(c *gin.Context) {
 	// Get stdout pipe
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		fmt.Fprintf(c.Writer, "data: {\"error\": \"Failed to get stdout pipe\"}\n\n", err.Error())
+		fmt.Fprintf(c.Writer, "data: {\"error\": \"Failed to get stdout pipe: %s\"}\n\n", err.Error())
 		c.Writer.Flush()
 		return
 	}
@@ -362,14 +362,14 @@ func (h *DeploymentHandler) StreamContainerLogs(c *gin.Context) {
 	// Get stderr pipe
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		fmt.Fprintf(c.Writer, "data: {\"error\": \"Failed to get stderr pipe\"}\n\n", err.Error())
+		fmt.Fprintf(c.Writer, "data: {\"error\": \"Failed to get stderr pipe: %s\"}\n\n", err.Error())
 		c.Writer.Flush()
 		return
 	}
 
 	// Start command
 	if err := cmd.Start(); err != nil {
-		fmt.Fprintf(c.Writer, "data: {\"error\": \"Failed to start log stream\"}\n\n", err.Error())
+		fmt.Fprintf(c.Writer, "data: {\"error\": \"Failed to start log stream: %s\"}\n\n", err.Error())
 		c.Writer.Flush()
 		return
 	}

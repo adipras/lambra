@@ -29,8 +29,15 @@ type GenerationSnapshot struct {
 // SnapshotMetadata contains snapshot metadata
 type SnapshotMetadata struct {
 	Entities  []Entity               `json:"entities"`
-	Endpoints []Endpoint             `json:"endpoints"`
+	Endpoints []SnapshotEndpoint     `json:"endpoints"` // Use SnapshotEndpoint to preserve entity mapping
 	Config    map[string]interface{} `json:"config"`
+}
+
+// SnapshotEndpoint wraps Endpoint with entity name for proper mapping during rollback
+// This is needed because Endpoint.EntityID is not serialized to JSON (json:"-" tag)
+type SnapshotEndpoint struct {
+	Endpoint
+	EntityName string `json:"entity_name"` // Entity name for mapping during rollback
 }
 
 // DatabaseSnapshotInfo contains database migration info

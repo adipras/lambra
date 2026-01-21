@@ -1,9 +1,9 @@
 # Lambra - Progress Tracker
 
-> **Last Updated:** 2026-01-05 (Rollback Bug Investigation)
+> **Last Updated:** 2026-01-06 (Rollback Bug Fixed ✅)
 > **Current Phase:** Phase 4.2 - Deployment Logs (100% Complete ✅)
 > **Next Phase:** Phase 2.3 - GitLab Integration (Optional)
-> **Overall Progress:** 96% (Phase 1 + 1.5 + 2.1 + 2.2 + 2.4 + 3 + 3.5 + 3.6 + 4.1 + 4.2 complete)
+> **Overall Progress:** 97% (Phase 1 + 1.5 + 2.1 + 2.2 + 2.4 + 3 + 3.5 + 3.6 + 4.1 + 4.2 complete + Rollback fix)
 
 ---
 
@@ -1631,58 +1631,40 @@ curl -X POST http://localhost:8080/api/v1/projects \
 
 ---
 
-## 🐛 Open Issues (2026-01-05)
+## ✅ Fixed Issues (2026-01-06)
 
-### Issue: Rollback + Redeploy Build Failure (IN PROGRESS)
+### Issue: Rollback + Redeploy Build Failure - FIXED ✅
 
-**Status:** Under Investigation
-**Error:** `exit status 17` → Actually a build error in generated service
-**Symptom:** Rollback succeeds but redeployment fails
+**Status:** Fixed (2026-01-06)
+**Error:** `exit status 17` → Build error in generated service
+**Symptom:** Rollback succeeded but redeployment failed with undefined handler methods
 
-**Root Cause Analysis:**
-The actual error from Docker build logs:
-```
-cmd/server/main.go:103:35: unitHandler.ListCategories undefined
-cmd/server/main.go:104:42: unitHandler.GetCategory undefined
-cmd/server/main.go:105:36: unitHandler.CreateCategory undefined
-cmd/server/main.go:106:42: unitHandler.UpdateCategory undefined
-cmd/server/main.go:107:45: unitHandler.DeleteCategory undefined
-```
+**Root Cause Found:**
+1. **Handler template** generates methods based on entity name: `ListUnits`, `GetUnit`, `CreateUnit`, etc.
+2. **Route generation** (`generateGoFiles`) used `endpoint.Name` for handler method names, which might differ from entity-based names (e.g., `ListCategories` instead of `ListUnits`)
+3. After rollback, endpoints with custom names caused routes to call non-existent handler methods
 
-**Analysis:**
-1. After rollback, `main.go` has routes calling `unitHandler.ListCategories` etc.
-2. But the `unit_handler.go` only has methods like `ListUnits`, `GetUnit`, etc.
-3. This mismatch suggests:
-   - Either main.go route generation is using wrong data
-   - Or endpoint-entity association is corrupted during rollback
-   - Or handler file generation doesn't match route generation
+**Fixes Applied:**
+1. **Added `deriveHandlerMethod()`** in `deployment_service.go`:
+   - Derives handler method name from HTTP method + entity name (not endpoint.Name)
+   - Maps: GET → List{EntityPlural} or Get{Entity}, POST → Create{Entity}, PUT → Update{Entity}, DELETE → Delete{Entity}
+   - Ensures routes always call methods that exist in the generated handler template
 
-**Investigation Notes:**
-- `RollbackToSnapshot()` soft-deletes current entities (doesn't cascade to endpoints)
-- `generateGoFiles()` builds routes from `s.endpointRepo.GetByEntityID(entity.ID)`
-- `GenerateProjectByUUID()` generates handler files via templates
-- Both should read from same DB, but routes are mismatched with handler methods
+2. **Added `SoftDeleteByEntityID()`** in `endpoint_repository.go`:
+   - New method to soft-delete all endpoints for an entity
 
-**Possible Causes:**
-1. Endpoints not properly soft-deleted when entities are soft-deleted
-2. entityIDMap mapping incorrect during endpoint restoration
-3. Handler template generates default CRUD methods, but routes use custom endpoint names
-4. Old handler files not deleted when entity is removed (file cleanup issue)
+3. **Updated `RollbackToSnapshot()`** in `snapshot_service.go`:
+   - Now explicitly soft-deletes endpoints when soft-deleting entities
+   - Application-level soft deletes don't cascade via FK, so explicit deletion is required
 
-**Files Involved:**
-- `backend/internal/service/snapshot_service.go` - RollbackToSnapshot function
-- `backend/internal/service/deployment_service.go` - generateGoFiles, RedeployService
-- `backend/internal/service/generator_service.go` - GenerateProjectByUUID
-- `backend/internal/generator/templates.go` - handlerTemplate
+4. **Fixed `fmt.Fprintf` warnings** in `deployment.go`:
+   - Added missing format directives (`%s`) for error messages
 
-**Next Steps:**
-1. Add better logging to track entity/endpoint IDs during rollback
-2. Check if endpoint soft-delete is needed when entity is soft-deleted
-3. Verify entityIDMap mapping is correct
-4. Consider deleting old generated files before regenerating (file cleanup)
-5. Test with fresh project to isolate the issue
-
-**Workaround:** None currently - need to investigate further
+**Files Modified:**
+- `backend/internal/service/deployment_service.go` - Added `deriveHandlerMethod()`, updated route generation
+- `backend/internal/repository/endpoint_repository.go` - Added `SoftDeleteByEntityID()`
+- `backend/internal/service/snapshot_service.go` - Updated rollback to soft-delete endpoints
+- `backend/internal/api/handlers/deployment.go` - Fixed fmt.Fprintf warnings
 
 ---
 

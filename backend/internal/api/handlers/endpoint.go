@@ -89,6 +89,11 @@ func (h *EndpointHandler) GetEndpointsByEntity(c *gin.Context) {
 
 	endpoints, err := h.service.GetEndpointsByEntityUUID(entityID)
 	if err != nil {
+		// Check if error is "entity not found" - return 404 instead of 500
+		if strings.Contains(err.Error(), "not found") {
+			response.NotFound(c, "Entity not found")
+			return
+		}
 		response.InternalError(c, "Failed to retrieve endpoints", err)
 		return
 	}

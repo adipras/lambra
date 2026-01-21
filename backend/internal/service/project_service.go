@@ -3,12 +3,46 @@ package service
 import (
 	"database/sql"
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/yourusername/lambra/internal/models"
 	"github.com/yourusername/lambra/internal/repository"
 )
+
+// SanitizeServiceName applies naming rules to a service name:
+// 1. Only alphanumeric characters and spaces allowed
+// 2. Spaces are replaced with dashes
+// 3. "svc-" prefix is added
+// 4. Converts to lowercase
+func SanitizeServiceName(name string) string {
+	// Remove all characters except alphanumeric and spaces
+	reg := regexp.MustCompile(`[^a-zA-Z0-9\s]+`)
+	name = reg.ReplaceAllString(name, "")
+
+	// Trim whitespace
+	name = strings.TrimSpace(name)
+
+	// Replace spaces with dashes
+	name = strings.ReplaceAll(name, " ", "-")
+
+	// Remove consecutive dashes
+	for strings.Contains(name, "--") {
+		name = strings.ReplaceAll(name, "--", "-")
+	}
+
+	// Convert to lowercase
+	name = strings.ToLower(name)
+
+	// Add svc- prefix if not already present
+	if !strings.HasPrefix(name, "svc-") {
+		name = "svc-" + name
+	}
+
+	return name
+}
 
 type ProjectService struct {
 	repo *repository.ProjectRepository
@@ -53,8 +87,11 @@ func (s *ProjectService) CreateProject(req *models.CreateProjectRequest) (*model
 		return nil, fmt.Errorf("database connection failed: %w", err)
 	}
 
+	// Sanitize the service name (apply naming rules)
+	sanitizedName := SanitizeServiceName(req.Name)
+
 	project := &models.Project{
-		Name:       req.Name,
+		Name:       sanitizedName,
 		Namespace:  req.Namespace,
 		Status:     models.ProjectStatusActive,
 		DBHost:     req.DBHost,

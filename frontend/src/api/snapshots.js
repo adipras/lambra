@@ -23,8 +23,9 @@ export const snapshotsApi = {
   },
 
   // Rollback to a snapshot
+  // Note: Rollback includes redeploy which involves Docker build, so needs longer timeout
   rollback: async (id) => {
-    return axios.post(`/snapshots/${id}/rollback`)
+    return axios.post(`/snapshots/${id}/rollback`, {}, { timeout: 180000 }) // 3 minutes timeout
   },
 
   // Delete a snapshot

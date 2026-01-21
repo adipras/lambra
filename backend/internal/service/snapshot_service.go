@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/yourusername/lambra/internal/models"
@@ -44,14 +45,20 @@ func (s *SnapshotService) CreateSnapshot(projectUUID string, createdBy string) (
 		return nil, fmt.Errorf("failed to get entities: %w", err)
 	}
 
-	// Get all endpoints for each entity
-	var allEndpoints []models.Endpoint
+	// Get all endpoints for each entity with entity name for mapping during rollback
+	var allEndpoints []models.SnapshotEndpoint
 	for _, entity := range entities {
 		endpoints, err := s.endpointRepo.GetByEntityID(entity.ID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get endpoints for entity %s: %w", entity.Name, err)
 		}
-		allEndpoints = append(allEndpoints, endpoints...)
+		// Wrap each endpoint with entity name for proper mapping during rollback
+		for _, ep := range endpoints {
+			allEndpoints = append(allEndpoints, models.SnapshotEndpoint{
+				Endpoint:   ep,
+				EntityName: entity.Name,
+			})
+		}
 	}
 
 	// Create snapshot metadata
@@ -176,6 +183,47 @@ func (s *SnapshotService) GetLatestSnapshot(projectUUID string) (*models.Generat
 	return snapshot, nil
 }
 
+// inferEntityNameFromPath tries to match an endpoint path to an entity name
+// Used for backward compatibility with old snapshots that don't have entity_name field
+// Example: /categories → Category, /units → Unit
+func inferEntityNameFromPath(path string, entities []models.Entity) string {
+	// Clean the path and get the first segment
+	path = strings.TrimPrefix(path, "/")
+	parts := strings.Split(path, "/")
+	if len(parts) == 0 {
+		return ""
+	}
+
+	pathBase := strings.ToLower(parts[0])
+
+	// Try to match against entity table names (which are usually plural)
+	for _, entity := range entities {
+		tableName := strings.ToLower(entity.TableName)
+		if tableName == pathBase || tableName+"s" == pathBase {
+			return entity.Name
+		}
+	}
+
+	// Try to match against entity names (convert to snake_case plural)
+	for _, entity := range entities {
+		entityLower := strings.ToLower(entity.Name)
+		// Simple pluralization check
+		if entityLower+"s" == pathBase || entityLower+"es" == pathBase ||
+			entityLower == pathBase {
+			return entity.Name
+		}
+		// Handle -y → -ies (category → categories)
+		if strings.HasSuffix(entityLower, "y") {
+			plural := entityLower[:len(entityLower)-1] + "ies"
+			if plural == pathBase {
+				return entity.Name
+			}
+		}
+	}
+
+	return ""
+}
+
 // RollbackToSnapshot restores entities and endpoints from a snapshot
 // Returns the project UUID for redeployment
 func (s *SnapshotService) RollbackToSnapshot(snapshotUUID string, rolledBackBy string) (string, error) {
@@ -197,16 +245,21 @@ func (s *SnapshotService) RollbackToSnapshot(snapshotUUID string, rolledBackBy s
 		return "", fmt.Errorf("failed to parse snapshot metadata: %w", err)
 	}
 
-	// Soft delete all current entities (this will cascade to endpoints due to FK)
+	// Soft delete all current entities and their endpoints
+	// Note: Application-level soft deletes don't cascade via FK, so we must explicitly delete endpoints
 	currentEntities, err := s.entityRepo.GetByProjectID(project.ID)
 	if err == nil {
 		for _, entity := range currentEntities {
+			// First soft-delete endpoints for this entity
+			s.endpointRepo.SoftDeleteByEntityID(entity.ID, rolledBackBy)
+			// Then soft-delete the entity itself
 			s.entityRepo.DeleteByUUID(entity.UUID, rolledBackBy)
 		}
 	}
 
 	// Restore entities from snapshot
-	entityIDMap := make(map[int64]int64) // old ID -> new ID
+	// Use entity name as key (unique per project) since entity.ID is not serialized to JSON
+	entityNameToIDMap := make(map[string]int64) // entity name -> new ID
 	for _, entity := range metadata.Entities {
 		newEntity := &models.Entity{
 			ProjectID:   project.ID,
@@ -221,31 +274,48 @@ func (s *SnapshotService) RollbackToSnapshot(snapshotUUID string, rolledBackBy s
 			return "", fmt.Errorf("failed to restore entity %s: %w", entity.Name, err)
 		}
 
-		entityIDMap[entity.ID] = newEntity.ID
+		entityNameToIDMap[entity.Name] = newEntity.ID
 	}
 
 	// Restore endpoints from snapshot
-	for _, endpoint := range metadata.Endpoints {
-		newEntityID, ok := entityIDMap[endpoint.EntityID]
+	// Use EntityName from SnapshotEndpoint for proper mapping
+	// For backward compatibility with old snapshots that don't have entity_name,
+	// try to infer entity from endpoint path pattern (e.g., /categories → Category)
+	for _, snapshotEndpoint := range metadata.Endpoints {
+		entityName := snapshotEndpoint.EntityName
+
+		// Backward compatibility: if EntityName is empty, try to infer from path
+		if entityName == "" {
+			entityName = inferEntityNameFromPath(snapshotEndpoint.Path, metadata.Entities)
+			if entityName == "" {
+				fmt.Printf("Warning: could not determine entity for endpoint %s (path: %s), skipping\n",
+					snapshotEndpoint.Name, snapshotEndpoint.Path)
+				continue
+			}
+			fmt.Printf("Info: inferred entity '%s' for endpoint %s from path\n", entityName, snapshotEndpoint.Name)
+		}
+
+		newEntityID, ok := entityNameToIDMap[entityName]
 		if !ok {
+			fmt.Printf("Warning: entity %s not found for endpoint %s, skipping\n", entityName, snapshotEndpoint.Name)
 			continue // Skip if entity wasn't restored
 		}
 
 		newEndpoint := &models.Endpoint{
 			EntityID:        newEntityID,
 			ProjectID:       project.ID,
-			Name:            endpoint.Name,
-			Path:            endpoint.Path,
-			Method:          endpoint.Method,
-			Description:     endpoint.Description,
-			RequestSchema:   endpoint.RequestSchema,
-			ResponseSchema:  endpoint.ResponseSchema,
-			RequireAuth:     endpoint.RequireAuth,
+			Name:            snapshotEndpoint.Name,
+			Path:            snapshotEndpoint.Path,
+			Method:          snapshotEndpoint.Method,
+			Description:     snapshotEndpoint.Description,
+			RequestSchema:   snapshotEndpoint.RequestSchema,
+			ResponseSchema:  snapshotEndpoint.ResponseSchema,
+			RequireAuth:     snapshotEndpoint.RequireAuth,
 		}
 		newEndpoint.SetCreatedBy(rolledBackBy)
 
 		if err := s.endpointRepo.Create(newEndpoint); err != nil {
-			fmt.Printf("Warning: failed to restore endpoint %s: %v\n", endpoint.Name, err)
+			fmt.Printf("Warning: failed to restore endpoint %s: %v\n", snapshotEndpoint.Name, err)
 		}
 	}
 

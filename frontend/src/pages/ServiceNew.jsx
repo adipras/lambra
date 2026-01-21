@@ -1,9 +1,34 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCreateProject } from '../hooks/useProjects'
 import { ErrorAlert } from '../components/shared/ErrorAlert'
 import { LoadingSpinner } from '../components/shared/LoadingSpinner'
 import { Database, AlertCircle, CheckCircle } from 'lucide-react'
+
+// Sanitize service name (mirrors backend logic)
+const sanitizeServiceName = (name) => {
+  if (!name) return 'svc-'
+
+  // Remove all characters except alphanumeric and spaces
+  let sanitized = name.replace(/[^a-zA-Z0-9\s]+/g, '')
+
+  // Trim whitespace
+  sanitized = sanitized.trim()
+
+  // Replace spaces with dashes
+  sanitized = sanitized.replace(/\s+/g, '-')
+
+  // Remove consecutive dashes
+  while (sanitized.includes('--')) {
+    sanitized = sanitized.replace(/--/g, '-')
+  }
+
+  // Convert to lowercase
+  sanitized = sanitized.toLowerCase()
+
+  // Add svc- prefix
+  return 'svc-' + sanitized
+}
 
 export const ServiceNew = () => {
   const navigate = useNavigate()
@@ -22,6 +47,9 @@ export const ServiceNew = () => {
   })
   const [error, setError] = useState(null)
   const [dbValidated, setDbValidated] = useState(false)
+
+  // Preview the sanitized service name
+  const previewName = useMemo(() => sanitizeServiceName(formData.name), [formData.name])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -65,21 +93,31 @@ export const ServiceNew = () => {
             <label htmlFor="name" className="label">
               Service Name *
             </label>
-            <input
-              type="text"
-              id="name"
-              name="name"
-              value={formData.name}
-              onChange={handleChange}
-              className="input"
-              placeholder="e.g., User Service, Payment Service"
-              required
-              minLength={3}
-              maxLength={100}
-            />
+            <div className="flex">
+              <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-gray-300 bg-gray-100 text-gray-500 text-sm font-mono select-none">
+                svc-
+              </span>
+              <input
+                type="text"
+                id="name"
+                name="name"
+                value={formData.name}
+                onChange={handleChange}
+                className="input rounded-l-none flex-1"
+                placeholder="e.g., User Service, Payment"
+                required
+                minLength={1}
+                maxLength={100}
+              />
+            </div>
             <p className="mt-1 text-sm text-gray-500">
-              A descriptive name for your microservice
+              Only letters, numbers, and spaces allowed. Special characters will be removed.
             </p>
+            {formData.name && (
+              <p className="mt-1 text-sm text-indigo-600">
+                Final name: <span className="font-mono font-medium">{previewName}</span>
+              </p>
+            )}
           </div>
 
           {/* Namespace */}
@@ -98,7 +136,7 @@ export const ServiceNew = () => {
               required
               minLength={3}
               maxLength={50}
-              pattern="[a-z0-9-]+"
+              pattern="[a-z0-9\-]+"
             />
             <p className="mt-1 text-sm text-gray-500">
               Kubernetes namespace (lowercase, numbers, and hyphens only)

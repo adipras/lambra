@@ -52,6 +52,11 @@ type FieldContext struct {
 	DefaultValue string
 	Description  string
 	Length       int
+	// FK fields (fields ending with _id)
+	IsForeignKey bool   // True if field ends with _id
+	FKName       string // UUID field name for API (e.g., category_id -> CategoryUUID)
+	FKNameLC     string // Lowercase version (e.g., category_uuid)
+	FKJSONTag    string // JSON tag for UUID field (e.g., json:"category_uuid")
 }
 
 // GenerateAll generates all code for an entity
@@ -199,9 +204,31 @@ func (g *CodeGenerator) parseField(field models.EntityField) FieldContext {
 		validateTag = fmt.Sprintf(`validate:"%s"`, validateRules)
 	}
 
+	fieldName := toPascalCase(field.Name)
+	fieldNameLC := toCamelCase(field.Name)
+
+	// Detect FK fields (fields ending with _id or Id)
+	isForeignKey := false
+	fkName := ""
+	fkNameLC := ""
+	fkJSONTag := ""
+
+	snakeName := toSnakeCase(field.Name)
+	if len(snakeName) > 3 && snakeName[len(snakeName)-3:] == "_id" {
+		isForeignKey = true
+		// Convert category_id -> CategoryUUID, category_uuid
+		baseName := snakeName[:len(snakeName)-3] // Remove _id
+		fkName = toPascalCase(baseName) + "UUID"
+		fkNameLC = toCamelCase(baseName) + "UUID"
+		fkJSONTag = fmt.Sprintf(`json:"%s_uuid"`, baseName)
+		if !field.Required {
+			fkJSONTag = fmt.Sprintf(`json:"%s_uuid,omitempty"`, baseName)
+		}
+	}
+
 	return FieldContext{
-		Name:         toPascalCase(field.Name),
-		NameLC:       toCamelCase(field.Name),
+		Name:         fieldName,
+		NameLC:       fieldNameLC,
 		Type:         field.Type,
 		GoType:       goType,
 		JSONTag:      toJSONTag(field.Name, field.Required),
@@ -212,6 +239,10 @@ func (g *CodeGenerator) parseField(field models.EntityField) FieldContext {
 		DefaultValue: field.DefaultValue,
 		Description:  field.Description,
 		Length:       field.Length,
+		IsForeignKey: isForeignKey,
+		FKName:       fkName,
+		FKNameLC:     fkNameLC,
+		FKJSONTag:    fkJSONTag,
 	}
 }
 
