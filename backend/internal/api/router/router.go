@@ -28,6 +28,7 @@ func Setup(db *sqlx.DB) *gin.Engine {
 	projectRepo := repository.NewProjectRepository(db)
 	entityRepo := repository.NewEntityRepository(db)
 	endpointRepo := repository.NewEndpointRepository(db)
+	relationRepo := repository.NewRelationRepository(db)
 	snapshotRepo := repository.NewSnapshotRepository(db)
 	deploymentRepo := repository.NewDeploymentRepository(db)
 	deploymentLogRepo := repository.NewDeploymentLogRepository(db)
@@ -36,6 +37,7 @@ func Setup(db *sqlx.DB) *gin.Engine {
 	projectService := service.NewProjectService(projectRepo)
 	entityService := service.NewEntityService(entityRepo, projectRepo, endpointRepo)
 	endpointService := service.NewEndpointService(endpointRepo, entityRepo, projectRepo)
+	relationService := service.NewRelationService(relationRepo, entityRepo)
 	generatorService := service.NewGeneratorService(projectRepo, entityRepo, endpointRepo)
 	deploymentService := service.NewDeploymentService(projectRepo, entityRepo, endpointRepo, snapshotRepo, deploymentRepo, deploymentLogRepo, generatorService, workspacePath)
 	exportService := service.NewExportService(projectRepo, entityRepo, endpointRepo)
@@ -46,6 +48,7 @@ func Setup(db *sqlx.DB) *gin.Engine {
 	projectHandler := handlers.NewProjectHandler(projectService)
 	entityHandler := handlers.NewEntityHandler(entityService)
 	endpointHandler := handlers.NewEndpointHandler(endpointService, deploymentService)
+	relationHandler := handlers.NewRelationHandler(relationService)
 	generatorHandler := handlers.NewGeneratorHandler(generatorService)
 	deploymentHandler := handlers.NewDeploymentHandler(deploymentService)
 	exportHandler := handlers.NewExportHandler(exportService)
@@ -96,6 +99,7 @@ func Setup(db *sqlx.DB) *gin.Engine {
 			entities.PUT("/:id", entityHandler.UpdateEntity)
 			entities.DELETE("/:id", entityHandler.DeleteEntity)
 			entities.GET("/:id/endpoints", endpointHandler.GetEndpointsByEntity)
+			entities.GET("/:id/relations", relationHandler.GetEntityRelations)
 		}
 
 		// Endpoints
@@ -106,6 +110,15 @@ func Setup(db *sqlx.DB) *gin.Engine {
 			endpoints.PUT("/:id", endpointHandler.UpdateEndpoint)
 			endpoints.DELETE("/:id", endpointHandler.DeleteEndpoint)
 			endpoints.POST("/:id/test", endpointHandler.TestEndpoint)
+		}
+
+		// Relations
+		relations := v1.Group("/relations")
+		{
+			relations.POST("", relationHandler.CreateRelation)
+			relations.GET("/:id", relationHandler.GetRelation)
+			relations.PUT("/:id", relationHandler.UpdateRelation)
+			relations.DELETE("/:id", relationHandler.DeleteRelation)
 		}
 
 		// Code Generation
