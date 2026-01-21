@@ -3,7 +3,8 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft, Plus, Trash2, Code, Play, Eye, X, FileCode, Check, AlertCircle,
   Square, Rocket, ExternalLink, RefreshCw, ChevronRight, FileJson,
-  ChevronDown, ChevronUp, Database, Zap, Settings, MoreVertical, Copy, Terminal, FileText
+  ChevronDown, ChevronUp, Database, Zap, Settings, MoreVertical, Copy, Terminal, FileText,
+  List, Network
 } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi } from '../api/projects'
@@ -28,6 +29,7 @@ import { DeployProgressModal } from '../components/deployment/DeployProgressModa
 import { SnapshotList } from '../components/deployment/SnapshotList'
 import LogsModal from '../components/logs/LogsModal'
 import DeploymentHistory from '../components/logs/DeploymentHistory'
+import DatabaseDiagram from '../components/diagram/DatabaseDiagram'
 
 export const ServiceDetail = () => {
   const { id } = useParams()
@@ -292,6 +294,7 @@ export const ServiceDetail = () => {
   const [showDeployProgress, setShowDeployProgress] = useState(false)
   const [currentDeploymentId, setCurrentDeploymentId] = useState(null)
   const [entityToDelete, setEntityToDelete] = useState(null)
+  const [viewMode, setViewMode] = useState('list') // 'list' or 'diagram'
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -664,18 +667,47 @@ export const ServiceDetail = () => {
               <p className="text-sm text-gray-500">Define your data models and API endpoints</p>
             </div>
           </div>
-          <button
-            onClick={() => setShowEntityModal(true)}
-            className="btn btn-primary"
-          >
-            <Plus className="w-4 h-4 mr-1.5" />
-            Add Entity
-          </button>
+
+          <div className="flex items-center gap-3">
+            {/* View Mode Toggle */}
+            <div className="flex items-center bg-gray-100 rounded-lg p-1">
+              <button
+                onClick={() => setViewMode('list')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  viewMode === 'list'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <List className="w-4 h-4" />
+                List View
+              </button>
+              <button
+                onClick={() => setViewMode('diagram')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  viewMode === 'diagram'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <Network className="w-4 h-4" />
+                Diagram View
+              </button>
+            </div>
+
+            <button
+              onClick={() => setShowEntityModal(true)}
+              className="btn btn-primary"
+            >
+              <Plus className="w-4 h-4 mr-1.5" />
+              Add Entity
+            </button>
+          </div>
         </div>
 
-        <div className="p-5">
+        <div className={viewMode === 'diagram' ? 'h-[600px]' : 'p-5'}>
           {entitiesLoading ? (
-            <div className="space-y-4">
+            <div className="space-y-4 p-5">
               <EntityCardSkeleton />
               <EntityCardSkeleton />
             </div>
@@ -694,6 +726,14 @@ export const ServiceDetail = () => {
                 Create First Entity
               </button>
             </div>
+          ) : viewMode === 'diagram' ? (
+            <DatabaseDiagram
+              entities={entities}
+              onSave={(positions) => {
+                console.log('Save diagram positions:', positions)
+                // TODO: Save positions to backend
+              }}
+            />
           ) : (
             <div className="space-y-4">
               {entities.map((entity) => (
