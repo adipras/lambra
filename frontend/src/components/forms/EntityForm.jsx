@@ -49,7 +49,7 @@ export const EntityForm = ({ onSubmit, onCancel, initialData = null, isLoading =
     table_name: initialData?.table_name || '',
     description: initialData?.description || '',
     fields: initialData?.fields || [
-      { name: '', type: 'string', required: false, unique: false, length: 255, description: '' }
+      { name: '', type: 'string', required: false, unique: false, length: null, description: '' }
     ],
     generate_endpoints: {
       list: true,
@@ -105,7 +105,7 @@ export const EntityForm = ({ onSubmit, onCancel, initialData = null, isLoading =
     const newIndex = formData.fields.length
     setFormData(prev => ({
       ...prev,
-      fields: [...prev.fields, { name: '', type: 'string', required: false, unique: false, length: 255, description: '' }]
+      fields: [...prev.fields, { name: '', type: 'string', required: false, unique: false, length: null, description: '' }]
     }))
     setActiveFieldIndex(newIndex)
   }
@@ -365,18 +365,22 @@ export const EntityForm = ({ onSubmit, onCancel, initialData = null, isLoading =
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
-                      {(field.type === 'string' || field.type === 'text') && (
+                      {field.type === 'string' && (
                         <div>
                           <label className="block text-xs font-medium text-gray-600 mb-1">
                             Max Length
                           </label>
                           <input
                             type="number"
-                            value={field.length || 255}
-                            onChange={(e) => handleFieldChange(index, 'length', parseInt(e.target.value))}
+                            value={field.length !== null && field.length !== undefined ? field.length : 255}
+                            onChange={(e) => {
+                              const value = e.target.value === '' ? null : parseInt(e.target.value)
+                              handleFieldChange(index, 'length', value)
+                            }}
                             className="input text-sm"
                             min="1"
                             max="65535"
+                            placeholder="255"
                           />
                         </div>
                       )}
