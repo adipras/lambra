@@ -97,8 +97,9 @@ The `internal/generator/` package generates Go code for microservices:
 
 ```
 src/
-├── api/         # Axios clients (projects.js, entities.js, endpoints.js)
+├── api/         # Axios clients (projects.js, entities.js, endpoints.js, relations.js)
 ├── components/
+│   ├── diagram/ # DatabaseDiagram, RelationModal, RelationEdge, EntityNode
 │   ├── forms/   # EntityForm, EndpointForm
 │   ├── layout/  # Layout, Sidebar
 │   └── shared/  # StatusBadge, LoadingSpinner, ErrorAlert
@@ -106,6 +107,27 @@ src/
 ├── pages/       # Route components
 └── lib/         # queryClient configuration
 ```
+
+### Creating Relations
+
+**Visual Relation Creation (New Method - Preferred):**
+- Switch to **Diagram View** in ServiceDetail page
+- Drag from one entity to another
+- RelationModal opens automatically
+- Configure relation type, ON DELETE/UPDATE behaviors
+- Relations stored in `relations` table
+
+**Field-based Relations (Legacy - Deprecated):**
+- Old entities may have "relation" type fields
+- Displayed as dashed lines in diagram
+- Cannot be edited via diagram (view-only)
+- Recommend migrating to new visual relations
+
+**Relation Types:**
+- **belongsTo** (pink): Source has FK to target (e.g., Post → User)
+- **hasOne** (purple): Target has FK to source (e.g., User → Profile)
+- **hasMany** (blue): Multiple targets have FK to source (e.g., User → Posts)
+- **manyToMany** (orange): Junction table connects both (e.g., Posts ↔ Tags)
 
 ### API Base URL
 
@@ -120,7 +142,7 @@ VITE_API_BASE_URL=http://localhost:8080/api/v1
 
 **Migrations**: SQL files in `backend/migrations/` (001_initial_schema, 002_add_uuid_and_base_entity)
 
-**Key tables**: projects, entities (with JSON fields), endpoints, git_repositories, generation_snapshots, deployments
+**Key tables**: projects, entities (with JSON fields), endpoints, relations, git_repositories, generation_snapshots, deployments
 
 ## API Routes
 
@@ -131,8 +153,11 @@ POST       /api/v1/projects/:id/entities
 GET        /api/v1/projects/:id/entities
 GET/PUT/DEL /api/v1/entities/:id
 GET        /api/v1/entities/:id/endpoints
+GET        /api/v1/entities/:id/relations
 POST       /api/v1/endpoints
 GET/PUT/DEL /api/v1/endpoints/:id
+POST       /api/v1/relations
+GET/PUT/DEL /api/v1/relations/:id
 POST       /api/v1/generate/entity
 POST       /api/v1/generate/project
 GET        /api/v1/generate/preview/:id

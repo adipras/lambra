@@ -12,20 +12,7 @@ const FIELD_TYPES = [
   { value: 'date', label: 'Date', icon: 'D', color: 'bg-orange-100 text-orange-700' },
   { value: 'datetime', label: 'DateTime', icon: 'DT', color: 'bg-orange-100 text-orange-700' },
   { value: 'json', label: 'JSON', icon: '{}', color: 'bg-yellow-100 text-yellow-700' },
-  { value: 'relation', label: 'Relation', icon: '🔗', color: 'bg-pink-100 text-pink-700' },
-]
-
-const RELATION_TYPES = [
-  { value: 'belongsTo', label: 'Belongs To', description: 'This entity has FK to related entity (Many-to-One)', example: 'Post belongs to User' },
-  { value: 'hasOne', label: 'Has One', description: 'Related entity has FK to this entity (One-to-One)', example: 'User has one Profile' },
-  { value: 'hasMany', label: 'Has Many', description: 'Related entities have FK to this entity (One-to-Many)', example: 'User has many Posts' },
-  { value: 'manyToMany', label: 'Many to Many', description: 'Junction table connects both entities', example: 'Post has many Tags' },
-]
-
-const ON_DELETE_OPTIONS = [
-  { value: 'CASCADE', label: 'Cascade', description: 'Delete related records' },
-  { value: 'SET NULL', label: 'Set Null', description: 'Set FK to null' },
-  { value: 'RESTRICT', label: 'Restrict', description: 'Prevent deletion if related' },
+  // Note: 'relation' type removed - use Diagram View to create relations visually
 ]
 
 const ENDPOINT_OPTIONS = [
@@ -244,6 +231,44 @@ export const EntityForm = ({ onSubmit, onCancel, initialData = null, isLoading =
             className="input"
             placeholder="Brief description of this entity..."
           />
+        </div>
+      </div>
+
+      {/* Info Banner for Relations */}
+      <div className="bg-gradient-to-r from-pink-50 to-purple-50 border border-pink-200 rounded-lg p-4">
+        <div className="flex items-start gap-3">
+          <div className="flex-shrink-0">
+            <Link2 className="w-5 h-5 text-pink-600" />
+          </div>
+          <div className="flex-1">
+            <h4 className="font-medium text-gray-900 mb-1">
+              💡 Want to Create Relations?
+            </h4>
+            <p className="text-sm text-gray-700 mb-2">
+              Entity relationships (belongsTo, hasOne, hasMany, manyToMany) are now created visually in the <strong>Diagram View</strong>.
+            </p>
+            <div className="flex items-center gap-2 text-xs text-gray-600">
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-2 h-2 rounded-full bg-pink-500"></span>
+                belongsTo
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-2 h-2 rounded-full bg-purple-500"></span>
+                hasOne
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-2 h-2 rounded-full bg-blue-500"></span>
+                hasMany
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-2 h-2 rounded-full bg-orange-500"></span>
+                manyToMany
+              </span>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              After creating your entities, switch to <strong>Diagram View</strong> and drag from one entity to another to create a relation.
+            </p>
+          </div>
         </div>
       </div>
 
