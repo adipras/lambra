@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS relations (
     
     -- Metadata
     description TEXT,
+    required BOOLEAN DEFAULT FALSE,
     
     -- Audit fields
     created_by VARCHAR(100),

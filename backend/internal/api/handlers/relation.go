@@ -45,7 +45,7 @@ type UpdateRelationRequest struct {
 func (h *RelationHandler) CreateRelation(c *gin.Context) {
 	var req CreateRelationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, "Invalid request", err)
 		return
 	}
 
@@ -69,11 +69,11 @@ func (h *RelationHandler) CreateRelation(c *gin.Context) {
 	)
 
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
+		response.Error(c, http.StatusInternalServerError, "Failed", err)
 		return
 	}
 
-	response.Success(c, relation)
+	response.Success(c, relation, "")
 }
 
 // GetRelation handles GET /api/v1/relations/:id
@@ -82,11 +82,11 @@ func (h *RelationHandler) GetRelation(c *gin.Context) {
 
 	relation, err := h.relationService.GetRelationByUUID(id)
 	if err != nil {
-		response.Error(c, http.StatusNotFound, "Relation not found")
+		response.Error(c, http.StatusNotFound, "Relation not found", err)
 		return
 	}
 
-	response.Success(c, relation)
+	response.Success(c, relation, "")
 }
 
 // GetEntityRelations handles GET /api/v1/entities/:id/relations
@@ -95,13 +95,13 @@ func (h *RelationHandler) GetEntityRelations(c *gin.Context) {
 
 	relations, err := h.relationService.GetEntityRelations(entityID)
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
+		response.Error(c, http.StatusInternalServerError, "Failed", err)
 		return
 	}
 
 	response.Success(c, gin.H{
 		"data": relations,
-	})
+	}, "")
 }
 
 // UpdateRelation handles PUT /api/v1/relations/:id
@@ -110,7 +110,7 @@ func (h *RelationHandler) UpdateRelation(c *gin.Context) {
 
 	var req UpdateRelationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, err.Error())
+		response.Error(c, http.StatusBadRequest, "Invalid request", err)
 		return
 	}
 
@@ -125,11 +125,11 @@ func (h *RelationHandler) UpdateRelation(c *gin.Context) {
 	)
 
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
+		response.Error(c, http.StatusInternalServerError, "Failed", err)
 		return
 	}
 
-	response.Success(c, relation)
+	response.Success(c, relation, "")
 }
 
 // DeleteRelation handles DELETE /api/v1/relations/:id
@@ -141,11 +141,11 @@ func (h *RelationHandler) DeleteRelation(c *gin.Context) {
 
 	err := h.relationService.DeleteRelation(id, deletedBy)
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
+		response.Error(c, http.StatusInternalServerError, "Failed", err)
 		return
 	}
 
 	response.Success(c, gin.H{
 		"message": "Relation deleted successfully",
-	})
+	}, "")
 }

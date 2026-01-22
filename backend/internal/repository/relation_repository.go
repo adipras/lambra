@@ -293,6 +293,18 @@ func (r *RelationRepository) DeleteByTargetEntity(entityID int64, deletedBy stri
 	return err
 }
 
+// SoftDeleteByEntity soft deletes all relations for an entity (both source and target)
+func (r *RelationRepository) SoftDeleteByEntity(entityID int64, deletedBy string) error {
+	query := `
+		UPDATE relations
+		SET deleted_at = ?,
+		    deleted_by = ?
+		WHERE (source_entity_id = ? OR target_entity_id = ?) AND deleted_at IS NULL
+	`
+	_, err := r.db.Exec(query, time.Now(), deletedBy, entityID, entityID)
+	return err
+}
+
 // Count returns the total number of relations
 func (r *RelationRepository) Count() (int, error) {
 	var count int

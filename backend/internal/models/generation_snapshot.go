@@ -30,6 +30,7 @@ type GenerationSnapshot struct {
 type SnapshotMetadata struct {
 	Entities  []Entity               `json:"entities"`
 	Endpoints []SnapshotEndpoint     `json:"endpoints"` // Use SnapshotEndpoint to preserve entity mapping
+	Relations []Relation             `json:"relations"`
 	Config    map[string]interface{} `json:"config"`
 }
 

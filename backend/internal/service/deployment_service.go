@@ -23,6 +23,7 @@ type DeploymentService struct {
 	projectRepo       *repository.ProjectRepository
 	entityRepo        *repository.EntityRepository
 	endpointRepo      *repository.EndpointRepository
+	relationRepo      *repository.RelationRepository
 	snapshotRepo      *repository.SnapshotRepository
 	deploymentRepo    *repository.DeploymentRepository
 	deploymentLogRepo *repository.DeploymentLogRepository
@@ -36,6 +37,7 @@ func NewDeploymentService(
 	projectRepo *repository.ProjectRepository,
 	entityRepo *repository.EntityRepository,
 	endpointRepo *repository.EndpointRepository,
+	relationRepo *repository.RelationRepository,
 	snapshotRepo *repository.SnapshotRepository,
 	deploymentRepo *repository.DeploymentRepository,
 	deploymentLogRepo *repository.DeploymentLogRepository,
@@ -46,6 +48,7 @@ func NewDeploymentService(
 		projectRepo:       projectRepo,
 		entityRepo:        entityRepo,
 		endpointRepo:      endpointRepo,
+		relationRepo:      relationRepo,
 		snapshotRepo:      snapshotRepo,
 		deploymentRepo:    deploymentRepo,
 		deploymentLogRepo: deploymentLogRepo,
@@ -734,6 +737,12 @@ func (s *DeploymentService) generateGoFiles(project *models.Project, serviceDir 
 		return fmt.Errorf("failed to get entities: %w", err)
 	}
 
+	// Get relations for this project
+	relations, err := s.relationRepo.GetByProject(project.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get relations: %w", err)
+	}
+
 	// go.mod
 	goModContent := fmt.Sprintf(`module %s
 
@@ -772,7 +781,7 @@ require (
 		}
 		// Also drop any junction tables
 		for _, entity := range entities {
-			junctionTables := s.getJunctionTableNames(entity)
+			junctionTables := s.getJunctionTableNames(entity, relations)
 			for _, jt := range junctionTables {
 				migrations.WriteString(fmt.Sprintf("\t\t`DROP TABLE IF EXISTS %s`,\n", jt))
 			}
@@ -799,12 +808,12 @@ require (
 		inits.WriteString(fmt.Sprintf("\t%sSvc := service.New%sService(%sRepo)\n", entityNameLower, entityNamePascal, entityNameLower))
 		inits.WriteString(fmt.Sprintf("\t%sHandler := handlers.New%sHandler(%sSvc)\n\n", entityNameLower, entityNamePascal, entityNameLower))
 
-		// Generate migration SQL for this entity
-		migrationSQL := s.generateMigrationSQL(entity)
+		// Generate migration SQL for this entity (with relations)
+		migrationSQL := s.generateMigrationSQL(entity, relations)
 		migrations.WriteString(migrationSQL)
 
 		// Generate junction tables for many-to-many relationships
-		junctionSQL := s.generateJunctionTableSQL(entity)
+		junctionSQL := s.generateJunctionTableSQL(entity, relations)
 		migrations.WriteString(junctionSQL)
 
 		// Get endpoints for this entity
@@ -925,7 +934,7 @@ func main() {
 }
 
 // generateMigrationSQL generates CREATE TABLE statement for an entity
-func (s *DeploymentService) generateMigrationSQL(entity models.Entity) string {
+func (s *DeploymentService) generateMigrationSQL(entity models.Entity, relations []models.Relation) string {
 	// Parse fields from JSON
 	var fields []models.EntityField
 	if err := json.Unmarshal(entity.Fields, &fields); err != nil {
@@ -940,27 +949,10 @@ func (s *DeploymentService) generateMigrationSQL(entity models.Entity) string {
 	sql.WriteString("\t\t\tid BIGINT PRIMARY KEY AUTO_INCREMENT,\n")
 	sql.WriteString("\t\t\tuuid CHAR(36) NOT NULL UNIQUE,\n")
 
+	// 1. Add regular fields from entity.Fields
 	for _, field := range fields {
-		// Handle relation fields
+		// Skip old relation fields (they should use relations table now)
 		if field.Type == "relation" {
-			// Only belongsTo creates a FK column in this entity
-			if field.RelationType == "belongsTo" {
-				fkColumn := field.GetForeignKeyColumn()
-				notNull := ""
-				if field.Required {
-					notNull = " NOT NULL"
-				}
-				sql.WriteString(fmt.Sprintf("\t\t\t%s BIGINT%s,\n", fkColumn, notNull))
-
-				// Add FK constraint
-				onDelete := field.OnDelete
-				if onDelete == "" {
-					onDelete = "CASCADE"
-				}
-				relatedTable := toSnakeCase(field.RelatedEntity) + "s"
-				foreignKeys = append(foreignKeys, fmt.Sprintf("\t\t\tFOREIGN KEY (%s) REFERENCES %s(id) ON DELETE %s", fkColumn, relatedTable, onDelete))
-			}
-			// hasOne, hasMany, manyToMany don't create columns here (FK is on the other side or in junction table)
 			continue
 		}
 
@@ -976,6 +968,39 @@ func (s *DeploymentService) generateMigrationSQL(entity models.Entity) string {
 			defaultVal = fmt.Sprintf(" DEFAULT %s", field.DefaultValue)
 		}
 		sql.WriteString(fmt.Sprintf("\t\t\t%s %s%s%s,\n", columnName, columnType, notNull, defaultVal))
+	}
+
+	// 2. Add FK columns from relations table (belongsTo only)
+	for _, rel := range relations {
+		// Only add FK column if this entity is the source and relation is belongsTo
+		if rel.SourceEntityID == entity.ID && rel.RelationType == models.RelationTypeBelongsTo {
+			fkColumn := rel.SourceFieldName
+			if fkColumn == "" {
+				// Fallback: generate FK name from target entity
+				targetEntity, _ := s.entityRepo.GetByID(rel.TargetEntityID)
+				if targetEntity != nil {
+					fkColumn = toSnakeCase(targetEntity.Name) + "_id"
+				}
+			}
+
+			notNull := ""
+			if rel.Required {
+				notNull = " NOT NULL"
+			}
+
+			sql.WriteString(fmt.Sprintf("\t\t\t%s BIGINT%s,\n", fkColumn, notNull))
+
+			// Add FK constraint
+			onDelete := rel.OnDelete
+			if onDelete == "" {
+				onDelete = "CASCADE"
+			}
+			targetEntity, _ := s.entityRepo.GetByID(rel.TargetEntityID)
+			if targetEntity != nil {
+				relatedTable := targetEntity.TableName
+				foreignKeys = append(foreignKeys, fmt.Sprintf("\t\t\tFOREIGN KEY (%s) REFERENCES %s(id) ON DELETE %s", fkColumn, relatedTable, onDelete))
+			}
+		}
 	}
 
 	sql.WriteString("\t\t\tcreated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,\n")
@@ -996,34 +1021,43 @@ func (s *DeploymentService) generateMigrationSQL(entity models.Entity) string {
 }
 
 // generateJunctionTableSQL generates CREATE TABLE for many-to-many relationships
-func (s *DeploymentService) generateJunctionTableSQL(entity models.Entity) string {
-	var fields []models.EntityField
-	if err := json.Unmarshal(entity.Fields, &fields); err != nil {
-		return ""
-	}
-
+func (s *DeploymentService) generateJunctionTableSQL(entity models.Entity, relations []models.Relation) string {
 	var sql strings.Builder
-	entityTable := entity.TableName
 
-	for _, field := range fields {
-		if field.Type == "relation" && field.RelationType == "manyToMany" {
-			relatedTable := toSnakeCase(field.RelatedEntity) + "s"
-
-			// Create junction table name (alphabetical order for consistency)
-			junctionTable := entityTable + "_" + relatedTable
-			if entityTable > relatedTable {
-				junctionTable = relatedTable + "_" + entityTable
+	// Find manyToMany relations where this entity is the source
+	for _, rel := range relations {
+		if rel.SourceEntityID == entity.ID && rel.RelationType == models.RelationTypeManyToMany {
+			// Get source and target entities
+			sourceEntity := entity
+			targetEntity, err := s.entityRepo.GetByID(rel.TargetEntityID)
+			if err != nil || targetEntity == nil {
+				continue
 			}
 
-			entityFK := toSnakeCase(strings.TrimSuffix(entityTable, "s")) + "_id"
-			relatedFK := toSnakeCase(field.RelatedEntity) + "_id"
+			// Use junction table name from relation (or generate if empty)
+			junctionTableName := rel.JunctionTable.String
+			if !rel.JunctionTable.Valid || junctionTableName == "" {
+				// Generate junction table name (alphabetical order)
+				sourceTable := sourceEntity.TableName
+				targetTable := targetEntity.TableName
+				if sourceTable < targetTable {
+					junctionTableName = sourceTable + "_" + targetTable
+				} else {
+					junctionTableName = targetTable + "_" + sourceTable
+				}
+			}
 
-			sql.WriteString(fmt.Sprintf("\t\t`CREATE TABLE IF NOT EXISTS %s (\n", junctionTable))
-			sql.WriteString(fmt.Sprintf("\t\t\t%s BIGINT NOT NULL,\n", entityFK))
-			sql.WriteString(fmt.Sprintf("\t\t\t%s BIGINT NOT NULL,\n", relatedFK))
-			sql.WriteString(fmt.Sprintf("\t\t\tPRIMARY KEY (%s, %s),\n", entityFK, relatedFK))
-			sql.WriteString(fmt.Sprintf("\t\t\tFOREIGN KEY (%s) REFERENCES %s(id) ON DELETE CASCADE,\n", entityFK, entityTable))
-			sql.WriteString(fmt.Sprintf("\t\t\tFOREIGN KEY (%s) REFERENCES %s(id) ON DELETE CASCADE\n", relatedFK, relatedTable))
+			// Generate FK column names
+			sourceFK := toSnakeCase(strings.TrimSuffix(sourceEntity.TableName, "s")) + "_id"
+			targetFK := toSnakeCase(strings.TrimSuffix(targetEntity.TableName, "s")) + "_id"
+
+			sql.WriteString(fmt.Sprintf("\t\t`CREATE TABLE IF NOT EXISTS %s (\n", junctionTableName))
+			sql.WriteString(fmt.Sprintf("\t\t\t%s BIGINT NOT NULL,\n", sourceFK))
+			sql.WriteString(fmt.Sprintf("\t\t\t%s BIGINT NOT NULL,\n", targetFK))
+			sql.WriteString("\t\t\tcreated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,\n")
+			sql.WriteString(fmt.Sprintf("\t\t\tPRIMARY KEY (%s, %s),\n", sourceFK, targetFK))
+			sql.WriteString(fmt.Sprintf("\t\t\tFOREIGN KEY (%s) REFERENCES %s(id) ON DELETE CASCADE,\n", sourceFK, sourceEntity.TableName))
+			sql.WriteString(fmt.Sprintf("\t\t\tFOREIGN KEY (%s) REFERENCES %s(id) ON DELETE CASCADE\n", targetFK, targetEntity.TableName))
 			sql.WriteString("\t\t)`,\n")
 		}
 	}
@@ -1032,25 +1066,28 @@ func (s *DeploymentService) generateJunctionTableSQL(entity models.Entity) strin
 }
 
 // getJunctionTableNames returns junction table names for many-to-many relations in an entity
-func (s *DeploymentService) getJunctionTableNames(entity models.Entity) []string {
-	var fields []models.EntityField
-	if err := json.Unmarshal(entity.Fields, &fields); err != nil {
-		return nil
-	}
-
+func (s *DeploymentService) getJunctionTableNames(entity models.Entity, relations []models.Relation) []string {
 	var tables []string
-	entityTable := entity.TableName
 
-	for _, field := range fields {
-		if field.Type == "relation" && field.RelationType == "manyToMany" {
-			relatedTable := toSnakeCase(field.RelatedEntity) + "s"
-
-			// Create junction table name (alphabetical order for consistency)
-			junctionTable := entityTable + "_" + relatedTable
-			if entityTable > relatedTable {
-				junctionTable = relatedTable + "_" + entityTable
+	for _, rel := range relations {
+		if rel.SourceEntityID == entity.ID && rel.RelationType == models.RelationTypeManyToMany {
+			// Use junction table name from relation (or generate if empty)
+			junctionTableName := rel.JunctionTable.String
+			if !rel.JunctionTable.Valid || junctionTableName == "" {
+				targetEntity, _ := s.entityRepo.GetByID(rel.TargetEntityID)
+				if targetEntity != nil {
+					sourceTable := entity.TableName
+					targetTable := targetEntity.TableName
+					if sourceTable < targetTable {
+						junctionTableName = sourceTable + "_" + targetTable
+					} else {
+						junctionTableName = targetTable + "_" + sourceTable
+					}
+				}
 			}
-			tables = append(tables, junctionTable)
+			if junctionTableName != "" {
+				tables = append(tables, junctionTableName)
+			}
 		}
 	}
 
@@ -1073,12 +1110,18 @@ func (s *DeploymentService) detectDeletedTables(previousSnapshot *models.Generat
 		return nil
 	}
 
+	// Get current relations
+	currentRelations, err := s.relationRepo.GetByProject(projectID)
+	if err != nil {
+		currentRelations = []models.Relation{} // Continue without relations if error
+	}
+
 	// Create map of current table names
 	currentTables := make(map[string]bool)
 	for _, entity := range currentEntities {
 		currentTables[entity.TableName] = true
 		// Also add junction tables
-		for _, jt := range s.getJunctionTableNames(entity) {
+		for _, jt := range s.getJunctionTableNames(entity, currentRelations) {
 			currentTables[jt] = true
 		}
 	}
@@ -1088,8 +1131,8 @@ func (s *DeploymentService) detectDeletedTables(previousSnapshot *models.Generat
 		if !currentTables[prevEntity.TableName] {
 			tablesToDrop = append(tablesToDrop, prevEntity.TableName)
 		}
-		// Check for junction tables from previous entities
-		for _, jt := range s.getJunctionTableNames(prevEntity) {
+		// Check for junction tables from previous entities (using prev relations)
+		for _, jt := range s.getJunctionTableNames(prevEntity, previousMetadata.Relations) {
 			if !currentTables[jt] {
 				tablesToDrop = append(tablesToDrop, jt)
 			}

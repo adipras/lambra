@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/yourusername/lambra/internal/models"
 	"github.com/yourusername/lambra/internal/repository"
@@ -240,27 +239,4 @@ func (s *RelationService) DeleteEntityRelations(entityUUID, deletedBy string) er
 	}
 
 	return nil
-}
-
-// Helper function to convert to snake_case
-func toSnakeCase(s string) string {
-	var result strings.Builder
-	for i, r := range s {
-		if i > 0 && r >= 'A' && r <= 'Z' {
-			result.WriteRune('_')
-		}
-		result.WriteRune(r)
-	}
-	return strings.ToLower(result.String())
-}
-
-// Helper function to pluralize (simple version)
-func pluralize(s string) string {
-	if strings.HasSuffix(s, "y") {
-		return s[:len(s)-1] + "ies"
-	}
-	if strings.HasSuffix(s, "s") {
-		return s + "es"
-	}
-	return s + "s"
 }

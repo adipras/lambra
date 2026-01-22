@@ -2,8 +2,8 @@ package models
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
-	"time"
 )
 
 // Relation represents a database relation between entities
@@ -17,6 +17,7 @@ type Relation struct {
 	OnUpdate        string         `db:"on_update" json:"on_update"`
 	JunctionTable   sql.NullString `db:"junction_table" json:"junction_table,omitempty"`
 	Description     sql.NullString `db:"description" json:"description,omitempty"`
+	Required        bool           `db:"required" json:"required"`
 
 	// For JSON responses (populated from joins)
 	SourceEntityUUID string `db:"-" json:"source_entity_id,omitempty"`
@@ -24,6 +25,14 @@ type Relation struct {
 	SourceEntityName string `db:"-" json:"source_entity_name,omitempty"`
 	TargetEntityName string `db:"-" json:"target_entity_name,omitempty"`
 }
+
+// Relation type constants
+const (
+	RelationTypeBelongsTo  = "belongsTo"
+	RelationTypeHasOne     = "hasOne"
+	RelationTypeHasMany    = "hasMany"
+	RelationTypeManyToMany = "manyToMany"
+)
 
 // TableName returns the table name for this model
 func (Relation) TableName() string {
@@ -86,10 +95,16 @@ func (r *Relation) Validate() error {
 	return nil
 }
 
-// MarshalJSON customizes JSON output
+// MarshalJSON customizes JSON output to expose UUID as "id"
 func (r Relation) MarshalJSON() ([]byte, error) {
 	type Alias Relation
-	return marshalWithUUID(Alias(r), r.UUID)
+	return json.Marshal(&struct {
+		ID string `json:"id"`
+		*Alias
+	}{
+		ID:    r.UUID,
+		Alias: (*Alias)(&r),
+	})
 }
 
 // RelationWithEntities includes entity names for display

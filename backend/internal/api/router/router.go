@@ -39,9 +39,9 @@ func Setup(db *sqlx.DB) *gin.Engine {
 	endpointService := service.NewEndpointService(endpointRepo, entityRepo, projectRepo)
 	relationService := service.NewRelationService(relationRepo, entityRepo)
 	generatorService := service.NewGeneratorService(projectRepo, entityRepo, endpointRepo)
-	deploymentService := service.NewDeploymentService(projectRepo, entityRepo, endpointRepo, snapshotRepo, deploymentRepo, deploymentLogRepo, generatorService, workspacePath)
+	deploymentService := service.NewDeploymentService(projectRepo, entityRepo, endpointRepo, relationRepo, snapshotRepo, deploymentRepo, deploymentLogRepo, generatorService, workspacePath)
 	exportService := service.NewExportService(projectRepo, entityRepo, endpointRepo)
-	snapshotService := service.NewSnapshotService(snapshotRepo, projectRepo, entityRepo, endpointRepo)
+	snapshotService := service.NewSnapshotService(snapshotRepo, projectRepo, entityRepo, endpointRepo, relationRepo)
 
 	// Initialize handlers
 	healthHandler := handlers.NewHealthHandler(db)

@@ -15,6 +15,7 @@ type SnapshotService struct {
 	projectRepo  *repository.ProjectRepository
 	entityRepo   *repository.EntityRepository
 	endpointRepo *repository.EndpointRepository
+	relationRepo *repository.RelationRepository
 }
 
 func NewSnapshotService(
@@ -22,12 +23,14 @@ func NewSnapshotService(
 	projectRepo *repository.ProjectRepository,
 	entityRepo *repository.EntityRepository,
 	endpointRepo *repository.EndpointRepository,
+	relationRepo *repository.RelationRepository,
 ) *SnapshotService {
 	return &SnapshotService{
 		snapshotRepo: snapshotRepo,
 		projectRepo:  projectRepo,
 		entityRepo:   entityRepo,
 		endpointRepo: endpointRepo,
+		relationRepo: relationRepo,
 	}
 }
 
@@ -43,6 +46,12 @@ func (s *SnapshotService) CreateSnapshot(projectUUID string, createdBy string) (
 	entities, err := s.entityRepo.GetByProjectID(project.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get entities: %w", err)
+	}
+
+	// Get all relations for the project
+	relations, err := s.relationRepo.GetByProject(project.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get relations: %w", err)
 	}
 
 	// Get all endpoints for each entity with entity name for mapping during rollback
@@ -65,6 +74,7 @@ func (s *SnapshotService) CreateSnapshot(projectUUID string, createdBy string) (
 	metadata := models.SnapshotMetadata{
 		Entities:  entities,
 		Endpoints: allEndpoints,
+		Relations: relations,
 		Config: map[string]interface{}{
 			"namespace": project.Namespace,
 			"db_host":   project.DBHost,
@@ -245,13 +255,15 @@ func (s *SnapshotService) RollbackToSnapshot(snapshotUUID string, rolledBackBy s
 		return "", fmt.Errorf("failed to parse snapshot metadata: %w", err)
 	}
 
-	// Soft delete all current entities and their endpoints
-	// Note: Application-level soft deletes don't cascade via FK, so we must explicitly delete endpoints
+	// Soft delete all current entities, endpoints, and relations
+	// Note: Application-level soft deletes don't cascade via FK, so we must explicitly delete
 	currentEntities, err := s.entityRepo.GetByProjectID(project.ID)
 	if err == nil {
 		for _, entity := range currentEntities {
 			// First soft-delete endpoints for this entity
 			s.endpointRepo.SoftDeleteByEntityID(entity.ID, rolledBackBy)
+			// Then soft-delete relations for this entity
+			s.relationRepo.SoftDeleteByEntity(entity.ID, rolledBackBy)
 			// Then soft-delete the entity itself
 			s.entityRepo.DeleteByUUID(entity.UUID, rolledBackBy)
 		}
@@ -316,6 +328,61 @@ func (s *SnapshotService) RollbackToSnapshot(snapshotUUID string, rolledBackBy s
 
 		if err := s.endpointRepo.Create(newEndpoint); err != nil {
 			fmt.Printf("Warning: failed to restore endpoint %s: %v\n", snapshotEndpoint.Name, err)
+		}
+	}
+
+	// Restore relations from snapshot
+	// Need to map old entity IDs to new entity IDs
+	for _, relation := range metadata.Relations {
+		// Find source entity by name
+		var sourceEntityID int64
+		for name, id := range entityNameToIDMap {
+			// Match by entity name (find the entity with matching ID from metadata)
+			for _, entity := range metadata.Entities {
+				if entity.ID == relation.SourceEntityID && entity.Name == name {
+					sourceEntityID = id
+					break
+				}
+			}
+			if sourceEntityID != 0 {
+				break
+			}
+		}
+
+		// Find target entity by name
+		var targetEntityID int64
+		for name, id := range entityNameToIDMap {
+			for _, entity := range metadata.Entities {
+				if entity.ID == relation.TargetEntityID && entity.Name == name {
+					targetEntityID = id
+					break
+				}
+			}
+			if targetEntityID != 0 {
+				break
+			}
+		}
+
+		if sourceEntityID == 0 || targetEntityID == 0 {
+			fmt.Printf("Warning: could not map relation %s, skipping\n", relation.UUID)
+			continue
+		}
+
+		newRelation := &models.Relation{
+			SourceEntityID:  sourceEntityID,
+			TargetEntityID:  targetEntityID,
+			RelationType:    relation.RelationType,
+			SourceFieldName: relation.SourceFieldName,
+			OnDelete:        relation.OnDelete,
+			OnUpdate:        relation.OnUpdate,
+			JunctionTable:   relation.JunctionTable,
+			Description:     relation.Description,
+			Required:        relation.Required,
+		}
+		newRelation.SetCreatedBy(rolledBackBy)
+
+		if err := s.relationRepo.Create(newRelation); err != nil {
+			fmt.Printf("Warning: failed to restore relation: %v\n", err)
 		}
 	}
 
