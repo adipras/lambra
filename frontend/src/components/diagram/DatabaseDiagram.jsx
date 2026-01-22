@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react'
+import React, { useCallback, useMemo, useState, useEffect } from 'react'
 import ReactFlow, {
   Background,
   Controls,
@@ -11,7 +11,10 @@ import ReactFlow, {
 import 'reactflow/dist/style.css'
 import EntityNode from './EntityNode'
 import RelationEdge from './RelationEdge'
+import RelationModal from './RelationModal'
 import { LayoutGrid, Save, Download, Info } from 'lucide-react'
+import { createRelation, getRelationsByEntity } from '../../api/relations'
+import { useQueryClient } from '@tanstack/react-query'
 
 const nodeTypes = {
   entity: EntityNode,
@@ -43,8 +46,34 @@ const getLayoutedElements = (nodes, edges) => {
   return { nodes: layoutedNodes, edges }
 }
 
-const DatabaseDiagram = ({ entities = [], onSave }) => {
+const DatabaseDiagram = ({ entities = [], onSave, projectId }) => {
   const [selectedField, setSelectedField] = useState(null)
+  const [isRelationModalOpen, setIsRelationModalOpen] = useState(false)
+  const [pendingConnection, setPendingConnection] = useState(null)
+  const [relations, setRelations] = useState([])
+  const queryClient = useQueryClient()
+
+  // Fetch relations for all entities
+  useEffect(() => {
+    const fetchAllRelations = async () => {
+      if (!entities || entities.length === 0) return
+      
+      try {
+        const allRelations = []
+        for (const entity of entities) {
+          const response = await getRelationsByEntity(entity.id)
+          if (response.data && response.data.relations) {
+            allRelations.push(...response.data.relations)
+          }
+        }
+        setRelations(allRelations)
+      } catch (error) {
+        console.error('Failed to fetch relations:', error)
+      }
+    }
+    
+    fetchAllRelations()
+  }, [entities])
 
   // Convert entities to nodes
   const initialNodes = useMemo(() => {
@@ -65,38 +94,120 @@ const DatabaseDiagram = ({ entities = [], onSave }) => {
   // Convert relations to edges
   const initialEdges = useMemo(() => {
     const edges = []
+    
+    // Convert relations from API to edges
+    relations.forEach((relation) => {
+      const sourceEntity = entities.find(e => e.id === relation.source_entity_id)
+      const targetEntity = entities.find(e => e.id === relation.target_entity_id)
+      
+      if (sourceEntity && targetEntity) {
+        edges.push({
+          id: relation.id,
+          source: sourceEntity.id,
+          target: targetEntity.id,
+          type: 'relation',
+          data: {
+            relationType: relation.relation_type,
+            fieldName: relation.source_field_name,
+            onDelete: relation.on_delete,
+            relationId: relation.id,
+          },
+          animated: true,
+        })
+      }
+    })
+    
+    // Also convert old field-based relations for backward compatibility
     entities.forEach((entity) => {
       entity.fields?.forEach((field) => {
         if (field.type === 'relation' && field.related_entity) {
           const targetEntity = entities.find(e => e.name === field.related_entity)
           if (targetEntity) {
-            edges.push({
-              id: `${entity.id}-${field.name}-${targetEntity.id}`,
-              source: entity.id,
-              target: targetEntity.id,
-              sourceHandle: `${entity.id}-${field.name}-source`,
-              targetHandle: `${targetEntity.id}-default-target`,
-              type: 'relation',
-              data: {
-                relationType: field.relation_type || 'belongsTo',
-                fieldName: field.name,
-              },
-              animated: true,
-            })
+            // Check if this relation already exists in new format
+            const existsInNewFormat = edges.some(
+              e => e.source === entity.id && e.target === targetEntity.id && e.data?.fieldName === field.name
+            )
+            
+            if (!existsInNewFormat) {
+              edges.push({
+                id: `${entity.id}-${field.name}-${targetEntity.id}`,
+                source: entity.id,
+                target: targetEntity.id,
+                sourceHandle: `${entity.id}-${field.name}-source`,
+                targetHandle: `${targetEntity.id}-default-target`,
+                type: 'relation',
+                data: {
+                  relationType: field.relation_type || 'belongsTo',
+                  fieldName: field.name,
+                  isLegacy: true, // Mark as legacy
+                },
+                animated: true,
+              })
+            }
           }
         }
       })
     })
+    
     return edges
-  }, [entities])
+  }, [entities, relations])
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
 
+  // Update nodes and edges when entities or relations change
+  useEffect(() => {
+    setNodes(initialNodes)
+  }, [initialNodes, setNodes])
+
+  useEffect(() => {
+    setEdges(initialEdges)
+  }, [initialEdges, setEdges])
+
   const onConnect = useCallback(
-    (params) => setEdges((eds) => addEdge({ ...params, type: 'relation' }, eds)),
-    [setEdges]
+    (params) => {
+      // When user draws a connection, open modal instead of directly creating edge
+      const sourceEntity = entities.find(e => e.id === params.source)
+      const targetEntity = entities.find(e => e.id === params.target)
+      
+      if (sourceEntity && targetEntity) {
+        setPendingConnection({ sourceEntity, targetEntity, params })
+        setIsRelationModalOpen(true)
+      }
+    },
+    [entities]
   )
+
+  const handleRelationSubmit = async (formData) => {
+    try {
+      await createRelation(formData)
+      
+      // Refetch relations
+      const allRelations = []
+      for (const entity of entities) {
+        const response = await getRelationsByEntity(entity.id)
+        if (response.data && response.data.relations) {
+          allRelations.push(...response.data.relations)
+        }
+      }
+      setRelations(allRelations)
+      
+      // Invalidate queries to refresh entity list if needed
+      queryClient.invalidateQueries(['entities'])
+      queryClient.invalidateQueries(['project'])
+      
+      setIsRelationModalOpen(false)
+      setPendingConnection(null)
+    } catch (error) {
+      console.error('Failed to create relation:', error)
+      alert('Failed to create relation: ' + (error.response?.data?.error || error.message))
+    }
+  }
+
+  const handleRelationModalClose = () => {
+    setIsRelationModalOpen(false)
+    setPendingConnection(null)
+  }
 
   const onLayout = useCallback(() => {
     const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(nodes, edges)
@@ -230,6 +341,17 @@ const DatabaseDiagram = ({ entities = [], onSave }) => {
           </Panel>
         )}
       </ReactFlow>
+
+      {/* Relation Modal */}
+      {isRelationModalOpen && pendingConnection && (
+        <RelationModal
+          isOpen={isRelationModalOpen}
+          onClose={handleRelationModalClose}
+          onSubmit={handleRelationSubmit}
+          sourceEntity={pendingConnection.sourceEntity}
+          targetEntity={pendingConnection.targetEntity}
+        />
+      )}
     </div>
   )
 }

@@ -157,41 +157,76 @@ Transform Lambra's relation creation from **form-based** to **visual drag-and-dr
 
 ---
 
-### **Phase 3: Frontend - Relation Modal** ⏳ Pending
+### **Phase 3: Frontend - Relation Modal** ✅ COMPLETE
 **Estimated Time:** 2 hours  
-**Status:** Not Started  
+**Actual Time:** 1.5 hours  
+**Status:** Complete (2026-01-22)  
 **Dependencies:** Phase 1 complete
 
 #### Tasks:
-- [ ] Create RelationModal component (`frontend/src/components/diagram/RelationModal.jsx`)
+- [x] Create RelationModal component (`frontend/src/components/diagram/RelationModal.jsx`)
   - Source entity display (read-only)
   - Target entity display (read-only)
-  - Field name input (auto-generated suggestion)
-  - Relation type selector (belongsTo, hasOne, hasMany, manyToMany)
+  - Field name input with auto-generated suggestions
+  - Relation type selector (belongsTo, hasOne, hasMany, manyToMany) with visual cards
   - ON DELETE dropdown (CASCADE, SET NULL, RESTRICT, NO ACTION)
   - ON UPDATE dropdown (CASCADE, SET NULL, RESTRICT, NO ACTION)
   - Junction table name (for manyToMany, auto-generated)
+  - Required checkbox for belongsTo relations
   - Description textarea
-  - Validation messages
+  - Form validation with error messages
   - Submit/Cancel buttons
   
-- [ ] Add relation type info/hints
+- [x] Add relation type info/hints
   - belongsTo: "Source entity will have FK to target"
   - hasOne: "Target entity will have FK to source"
   - hasMany: "Target entities will have FK to source"
   - manyToMany: "Junction table will connect both entities"
+  - Visual color coding (pink, purple, blue, orange)
+  - Example text for each relation type
   
-- [ ] Create relations API client (`frontend/src/api/relations.js`)
+- [x] Create relations API client (`frontend/src/api/relations.js`)
   - create(data)
   - getById(id)
   - getByEntity(entityId)
   - update(id, data)
   - deleteById(id)
+  - getByProject(projectId) - for future use
 
 **Deliverables:**
-- RelationModal component with full form
-- relations.js API client
-- Proper validation and error handling
+- ✅ RelationModal component with full form (400+ lines)
+- ✅ relations.js API client
+- ✅ Proper validation and error handling
+- ✅ Auto-generated field names based on relation type
+- ✅ Auto-generated junction table names
+- ✅ Visual relation type selector with color coding
+- ✅ DatabaseDiagram integration - modal opens on connection
+
+**Frontend Integration:**
+- Updated DatabaseDiagram.jsx:
+  - Import RelationModal and API functions
+  - Fetch relations from API on component mount
+  - Convert API relations to ReactFlow edges
+  - onConnect event opens RelationModal
+  - handleRelationSubmit creates relation and refreshes
+  - Support for both new (relations table) and legacy (field-based) relations
+  
+- Updated ServiceDetail.jsx:
+  - Pass projectId prop to DatabaseDiagram
+
+**Features:**
+- ✅ Smart field name generation (e.g., `user_id` for belongsTo User)
+- ✅ Smart junction table generation (e.g., `posts_tags` alphabetically sorted)
+- ✅ Real-time validation
+- ✅ Visual feedback for selected relation type
+- ✅ Helper text for ON DELETE/UPDATE behaviors
+- ✅ Snake_case conversion for field names
+
+**Testing Notes:**
+- Component structure: ✅ SUCCESS
+- Build/Compile: ⏳ Pending (npm build test)
+- Manual UI testing: ⏳ Pending (requires Docker + frontend running)
+- Integration testing: ⏳ Pending Phase 6
 
 ---
 
@@ -309,23 +344,23 @@ Transform Lambra's relation creation from **form-based** to **visual drag-and-dr
 ## 📊 Overall Progress
 
 **Total Estimated Time:** 10-12 hours  
-**Time Spent:** 4 hours  
-**Current Progress:** 33.3% (Phases 1 & 2 Complete)  
-**Last Updated:** 2026-01-22 01:30 WIB
+**Time Spent:** 5.5 hours  
+**Current Progress:** 50% (Phases 1, 2, 3 Complete)  
+**Last Updated:** 2026-01-22 02:30 WIB
 
 ```
 Phase 1: Backend Foundation        [██████████] 100% ✅ (6/6 tasks) - 2 hours
 Phase 2: Code Generator            [██████████] 100% ✅ (5/5 tasks) - 2 hours
-Phase 3: Relation Modal            [░░░░░░░░░░]   0%   (0/3 tasks) - Next
-Phase 4: Diagram Integration       [░░░░░░░░░░]   0%   (0/5 tasks)
+Phase 3: Relation Modal            [██████████] 100% ✅ (3/3 tasks) - 1.5 hours
+Phase 4: Diagram Integration       [░░░░░░░░░░]   0%   (0/5 tasks) - Next
 Phase 5: EntityForm Cleanup        [░░░░░░░░░░]   0%   (0/3 tasks)
 Phase 6: Migration & Testing       [░░░░░░░░░░]   0%   (0/5 tasks)
 ────────────────────────────────────────────────────────────────────
-Overall:                           [███▓░░░░░░]  33.3% (11/27 tasks)
+Overall:                           [█████░░░░░]  50% (14/27 tasks)
 ```
 
-**Completion Rate:** 2 of 6 phases complete  
-**Remaining Work:** ~6-8 hours
+**Completion Rate:** 3 of 6 phases complete  
+**Remaining Work:** ~4.5-6 hours
 
 ---
 
@@ -563,22 +598,24 @@ Columns: id, post_id, tag_id, created_at
    - ✅ Build successful
 3. 🎉 **Phase 1 Complete! (2 hours)**
 
-**Current Status (2026-01-22 01:30 WIB):**
+**Current Status (2026-01-22 02:30 WIB):**
 - Phase 1: ✅ COMPLETE - Backend foundation ready
 - Phase 2: ✅ COMPLETE - Code generator integration ready
-- Ready to start Phase 3: Frontend Relation Modal (~2 hours)
+- Phase 3: ✅ COMPLETE - Frontend Relation Modal ready
+- Ready to start Phase 4: Diagram Integration (~3 hours)
 - All backend code compiles successfully
+- Frontend components created and integrated
 
-**Next Phase (Phase 3):**
-- Create RelationModal component (~2 hours)
-- Build relation creation form with validation
-- Create relations API client
-- Test relation creation flow
+**Next Phase (Phase 4):**
+- Update DatabaseDiagram to display relations as edges (~1 hour)
+- Add edge interaction features (click, edit, delete) (~1 hour)
+- Update RelationEdge component styling (~0.5 hour)
+- Add visual feedback and tooltips (~0.5 hour)
 
 ---
 
-**Last Updated:** 2026-01-22 01:30 WIB  
-**Next Session:** Phase 3 - Frontend Relation Modal  
+**Last Updated:** 2026-01-22 02:30 WIB  
+**Next Session:** Phase 4 - Diagram Integration (Edge Display & Interaction)  
 **Maintained By:** Development Team  
 
 ---

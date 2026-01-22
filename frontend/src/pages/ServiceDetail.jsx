@@ -729,6 +729,7 @@ export const ServiceDetail = () => {
           ) : viewMode === 'diagram' ? (
             <DatabaseDiagram
               entities={entities}
+              projectId={projectId}
               onSave={(positions) => {
                 console.log('Save diagram positions:', positions)
                 // TODO: Save positions to backend
