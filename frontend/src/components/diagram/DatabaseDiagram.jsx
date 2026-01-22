@@ -13,7 +13,7 @@ import EntityNode from './EntityNode'
 import RelationEdge from './RelationEdge'
 import RelationModal from './RelationModal'
 import { LayoutGrid, Save, Download, Info } from 'lucide-react'
-import { createRelation, getRelationsByEntity } from '../../api/relations'
+import { createRelation, getRelationsByEntity, deleteRelation } from '../../api/relations'
 import { useQueryClient } from '@tanstack/react-query'
 
 const nodeTypes = {
@@ -109,8 +109,9 @@ const DatabaseDiagram = ({ entities = [], onSave, projectId }) => {
           data: {
             relationType: relation.relation_type,
             fieldName: relation.source_field_name,
-            onDelete: relation.on_delete,
+            onDeleteBehavior: relation.on_delete,
             relationId: relation.id,
+            onDelete: handleDeleteRelation,
           },
           animated: true,
         })
@@ -150,7 +151,7 @@ const DatabaseDiagram = ({ entities = [], onSave, projectId }) => {
     })
     
     return edges
-  }, [entities, relations])
+  }, [entities, relations, handleDeleteRelation])
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
@@ -208,6 +209,29 @@ const DatabaseDiagram = ({ entities = [], onSave, projectId }) => {
     setIsRelationModalOpen(false)
     setPendingConnection(null)
   }
+
+  const handleDeleteRelation = useCallback(async (relationId) => {
+    try {
+      await deleteRelation(relationId)
+      
+      // Refetch relations
+      const allRelations = []
+      for (const entity of entities) {
+        const response = await getRelationsByEntity(entity.id)
+        if (response.data && response.data.relations) {
+          allRelations.push(...response.data.relations)
+        }
+      }
+      setRelations(allRelations)
+      
+      // Invalidate queries
+      queryClient.invalidateQueries(['entities'])
+      queryClient.invalidateQueries(['project'])
+    } catch (error) {
+      console.error('Failed to delete relation:', error)
+      alert('Failed to delete relation: ' + (error.response?.data?.error || error.message))
+    }
+  }, [entities, queryClient])
 
   const onLayout = useCallback(() => {
     const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(nodes, edges)
@@ -294,9 +318,11 @@ const DatabaseDiagram = ({ entities = [], onSave, projectId }) => {
             <div className="text-sm text-gray-600 space-y-1">
               <div><strong>Drag</strong> entities to reposition</div>
               <div><strong>Scroll</strong> to zoom in/out</div>
-              <div><strong>Click field</strong> to view details</div>
-              <div className="text-xs text-gray-500 mt-2">
-                Pink lines = Relations • Blue dots = Connection points
+              <div><strong>Drag from entity to entity</strong> to create relation</div>
+              <div><strong>Hover over relation</strong> to view details & delete</div>
+              <div className="text-xs text-gray-500 mt-2 space-y-0.5">
+                <div>🔗 Relations: Pink=belongsTo, Purple=hasOne, Blue=hasMany, Orange=manyToMany</div>
+                <div>Dashed lines = Legacy field-based relations</div>
               </div>
             </div>
           </div>
