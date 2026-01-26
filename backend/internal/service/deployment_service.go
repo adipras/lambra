@@ -974,19 +974,39 @@ func (s *DeploymentService) generateMigrationSQL(entity models.Entity, relations
 		sql.WriteString(fmt.Sprintf("\t\t\t%s %s%s%s%s,\n", columnName, columnType, notNull, unique, defaultVal))
 	}
 
-	// 2. Add FK columns from relations table (belongsTo only)
+	// 2. Add FK columns from relations table
 	for _, rel := range relations {
-		// Only add FK column if this entity is the source and relation is belongsTo
-		if rel.SourceEntityID == entity.ID && rel.RelationType == models.RelationTypeBelongsTo {
-			fkColumn := rel.SourceFieldName
+		shouldAddFK := false
+		fkColumn := ""
+		targetTable := ""
+		var targetEntityID int64
+		
+		// Determine if this entity should have FK column based on relation type
+		if rel.RelationType == models.RelationTypeBelongsTo && rel.SourceEntityID == entity.ID {
+			// belongsTo: source has FK to target
+			shouldAddFK = true
+			fkColumn = rel.SourceFieldName
 			if fkColumn == "" {
-				// Fallback: generate FK name from target entity
 				targetEntity, _ := s.entityRepo.GetByID(rel.TargetEntityID)
 				if targetEntity != nil {
 					fkColumn = toSnakeCase(targetEntity.Name) + "_id"
 				}
 			}
-
+			targetEntityID = rel.TargetEntityID
+		} else if (rel.RelationType == models.RelationTypeHasOne || rel.RelationType == models.RelationTypeHasMany) && rel.TargetEntityID == entity.ID {
+			// hasOne/hasMany: target has FK to source
+			shouldAddFK = true
+			fkColumn = rel.SourceFieldName
+			if fkColumn == "" {
+				sourceEntity, _ := s.entityRepo.GetByID(rel.SourceEntityID)
+				if sourceEntity != nil {
+					fkColumn = toSnakeCase(sourceEntity.Name) + "_id"
+				}
+			}
+			targetEntityID = rel.SourceEntityID
+		}
+		
+		if shouldAddFK && fkColumn != "" {
 			notNull := ""
 			if rel.Required {
 				notNull = " NOT NULL"
@@ -999,10 +1019,15 @@ func (s *DeploymentService) generateMigrationSQL(entity models.Entity, relations
 			if onDelete == "" {
 				onDelete = "CASCADE"
 			}
-			targetEntity, _ := s.entityRepo.GetByID(rel.TargetEntityID)
+			onUpdate := rel.OnUpdate
+			if onUpdate == "" {
+				onUpdate = "CASCADE"
+			}
+			
+			targetEntity, _ := s.entityRepo.GetByID(targetEntityID)
 			if targetEntity != nil {
-				relatedTable := targetEntity.TableName
-				foreignKeys = append(foreignKeys, fmt.Sprintf("\t\t\tFOREIGN KEY (%s) REFERENCES %s(id) ON DELETE %s", fkColumn, relatedTable, onDelete))
+				targetTable = targetEntity.TableName
+				foreignKeys = append(foreignKeys, fmt.Sprintf("\t\t\tFOREIGN KEY (%s) REFERENCES %s(id) ON DELETE %s ON UPDATE %s", fkColumn, targetTable, onDelete, onUpdate))
 			}
 		}
 	}

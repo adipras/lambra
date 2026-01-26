@@ -433,8 +433,8 @@ func TestCodeGenerator_GenerateMigration(t *testing.T) {
 		"created_at TIMESTAMP",
 		"updated_at TIMESTAMP",
 		"deleted_at TIMESTAMP",
-		"CREATE INDEX idx_users_uuid",
-		"CREATE INDEX idx_users_deleted_at",
+		"INDEX idx_users_uuid",
+		"INDEX idx_users_deleted_at",
 	}
 
 	for _, expected := range upExpected {
@@ -637,4 +637,82 @@ t.Errorf("Update DTO should not have 'required' validation: %s", line)
 }
 
 t.Logf("Generated DTO:\n%s", code)
+}
+
+func TestCodeGenerator_GenerateMigrationWithHasManyRelation(t *testing.T) {
+gen := NewCodeGenerator()
+
+// Test Stock entity with hasMany relations (Product hasMany Stock, Location hasMany Stock)
+// Stock should have product_id and location_id FK columns
+ctx := &GenerateContext{
+EntityName: "Stock",
+TableName:  "stocks",
+Fields: []FieldContext{
+{
+Name:     "Quantity",
+NameLC:   "quantity",
+Type:     "int",
+GoType:   "int",
+Required: true,
+},
+},
+Relations: []RelationContext{
+{
+SourceEntityName: "Product",
+SourceTableName:  "products",
+TargetEntityName: "Stock",
+TargetTableName:  "stocks",
+FieldName:        "product_id",
+RelationType:     "hasMany",
+OnDelete:         "CASCADE",
+OnUpdate:         "CASCADE",
+IsSource:         false, // Stock is target
+},
+{
+SourceEntityName: "Location",
+SourceTableName:  "locations",
+TargetEntityName: "Stock",
+TargetTableName:  "stocks",
+FieldName:        "location_id",
+RelationType:     "hasMany",
+OnDelete:         "CASCADE",
+OnUpdate:         "CASCADE",
+IsSource:         false, // Stock is target
+},
+},
+}
+
+up, _, err := gen.GenerateMigration(ctx)
+if err != nil {
+t.Fatalf("GenerateMigration() error = %v", err)
+}
+
+// Check that FK columns are added
+if !strings.Contains(up, "product_id BIGINT NOT NULL") {
+t.Errorf("UP migration should contain product_id column")
+}
+
+if !strings.Contains(up, "location_id BIGINT NOT NULL") {
+t.Errorf("UP migration should contain location_id column")
+}
+
+// Check that FK constraints are added
+if !strings.Contains(up, "FOREIGN KEY (product_id) REFERENCES products(id)") {
+t.Errorf("UP migration should contain FK constraint for product_id")
+}
+
+if !strings.Contains(up, "FOREIGN KEY (location_id) REFERENCES locations(id)") {
+t.Errorf("UP migration should contain FK constraint for location_id")
+}
+
+// Check ON DELETE and ON UPDATE
+if !strings.Contains(up, "ON DELETE CASCADE") {
+t.Errorf("UP migration should contain ON DELETE CASCADE")
+}
+
+if !strings.Contains(up, "ON UPDATE CASCADE") {
+t.Errorf("UP migration should contain ON UPDATE CASCADE")
+}
+
+t.Logf("Generated UP migration:\n%s", up)
 }

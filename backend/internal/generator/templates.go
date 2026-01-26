@@ -620,27 +620,27 @@ CREATE TABLE IF NOT EXISTS {{ .TableName }} (
 {{- range .Fields }}
     {{ toSnake .Name }} {{ sqlType .Type .Length }}{{ if .Required }} NOT NULL{{ end }}{{ if .Unique }} UNIQUE{{ end }}{{ if .DefaultValue }} DEFAULT {{ .DefaultValue }}{{ end }},
 {{- end }}
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    deleted_at TIMESTAMP NULL DEFAULT NULL
-);
-
--- Create indexes
-CREATE INDEX idx_{{ .TableName }}_uuid ON {{ .TableName }}(uuid);
-CREATE INDEX idx_{{ .TableName }}_deleted_at ON {{ .TableName }}(deleted_at);
-CREATE INDEX idx_{{ .TableName }}_created_at ON {{ .TableName }}(created_at);
-
 {{- if .Relations }}
--- Add foreign key constraints
 {{- range .Relations }}
 {{- if or (eq .RelationType "belongsTo") (and (or (eq .RelationType "hasOne") (eq .RelationType "hasMany")) (not .IsSource)) }}
-ALTER TABLE {{ if .IsSource }}{{ $.TableName }}{{ else }}{{ .TargetTableName }}{{ end }}
-ADD CONSTRAINT fk_{{ if .IsSource }}{{ $.TableName }}{{ else }}{{ .TargetTableName }}{{ end }}_{{ .FieldName }}
-FOREIGN KEY ({{ .FieldName }}) REFERENCES {{ if .IsSource }}{{ .TargetTableName }}{{ else }}{{ .SourceTableName }}{{ end }}(id)
-ON DELETE {{ .OnDelete }} ON UPDATE {{ .OnUpdate }};
+    {{ .FieldName }} BIGINT NOT NULL,
 {{- end }}
 {{- end }}
 {{- end }}
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMP NULL DEFAULT NULL,
+    INDEX idx_{{ .TableName }}_uuid (uuid),
+    INDEX idx_{{ .TableName }}_deleted_at (deleted_at),
+    INDEX idx_{{ .TableName }}_created_at (created_at)
+{{- if .Relations }}
+{{- range .Relations }}
+{{- if or (eq .RelationType "belongsTo") (and (or (eq .RelationType "hasOne") (eq .RelationType "hasMany")) (not .IsSource)) }}
+    ,FOREIGN KEY ({{ .FieldName }}) REFERENCES {{ if .IsSource }}{{ .TargetTableName }}{{ else }}{{ .SourceTableName }}{{ end }}(id) ON DELETE {{ .OnDelete }} ON UPDATE {{ .OnUpdate }}
+{{- end }}
+{{- end }}
+{{- end }}
+);
 `
 
 // Migration down template
