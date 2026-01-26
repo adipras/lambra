@@ -1024,9 +1024,24 @@ func (s *DeploymentService) generateMigrationSQL(entity models.Entity, relations
 				onUpdate = "CASCADE"
 			}
 			
-			targetEntity, _ := s.entityRepo.GetByID(targetEntityID)
-			if targetEntity != nil {
-				targetTable = targetEntity.TableName
+			// Get target table name
+			if s.entityRepo != nil {
+				targetEntity, _ := s.entityRepo.GetByID(targetEntityID)
+				if targetEntity != nil {
+					targetTable = targetEntity.TableName
+				}
+			}
+			
+			// Fallback: derive table name from entity name if repo not available (testing)
+			if targetTable == "" {
+				if rel.RelationType == models.RelationTypeBelongsTo {
+					targetTable = toSnakeCase(pluralize(rel.TargetEntityName))
+				} else {
+					targetTable = toSnakeCase(pluralize(rel.SourceEntityName))
+				}
+			}
+			
+			if targetTable != "" {
 				foreignKeys = append(foreignKeys, fmt.Sprintf("\t\t\tFOREIGN KEY (%s) REFERENCES %s(id) ON DELETE %s ON UPDATE %s", fkColumn, targetTable, onDelete, onUpdate))
 			}
 		}
