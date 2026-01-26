@@ -950,10 +950,33 @@ func (s *DeploymentService) generateMigrationSQL(entity models.Entity, relations
 	sql.WriteString("\t\t\tuuid CHAR(36) NOT NULL UNIQUE,\n")
 
 	// 1. Add regular fields from entity.Fields
+	// Track FK fields to avoid duplicates
+	fkFields := make(map[string]bool)
+	
+	// First pass: collect FK field names from relations
+	for _, rel := range relations {
+		if rel.RelationType == models.RelationTypeBelongsTo && rel.SourceEntityID == entity.ID {
+			if rel.SourceFieldName != "" {
+				fkFields[rel.SourceFieldName] = true
+			}
+		} else if (rel.RelationType == models.RelationTypeHasOne || rel.RelationType == models.RelationTypeHasMany) && rel.TargetEntityID == entity.ID {
+			if rel.SourceFieldName != "" {
+				fkFields[rel.SourceFieldName] = true
+			}
+		}
+	}
+	
+	// Second pass: add regular fields (skip if it's a FK field)
 	for _, field := range fields {
 		// Skip old relation fields (they should use relations table now)
 		if field.Type == "relation" {
 			continue
+		}
+		
+		// Skip if this field is a FK from a relation
+		fieldName := toSnakeCase(field.Name)
+		if fkFields[fieldName] {
+			continue // Skip duplicate FK field
 		}
 
 		// Regular fields

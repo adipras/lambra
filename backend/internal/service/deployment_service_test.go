@@ -304,3 +304,71 @@ t.Errorf("SQL should NOT contain FOREIGN KEY when no relations, got:\n%s", sql)
 
 t.Logf("Generated SQL:\n%s", sql)
 }
+
+func TestGenerateMigrationSQL_NoDuplicateFields(t *testing.T) {
+service := &DeploymentService{}
+
+// Stock entity has product_id as regular field (user mistake)
+// AND relation also adds product_id (should skip the regular field)
+stockFields := []models.EntityField{
+{
+Name:     "product_id",  // User accidentally created this field
+Type:     "int",
+Required: true,
+},
+{
+Name:     "quantity",
+Type:     "int",
+Required: true,
+},
+}
+stockFieldsJSON, _ := json.Marshal(stockFields)
+
+stockEntity := models.Entity{
+BaseEntity: models.BaseEntity{
+ID: 3,
+},
+Name:      "Stock",
+TableName: "stocks",
+Fields:    stockFieldsJSON,
+}
+
+// Product hasMany Stock with product_id
+relations := []models.Relation{
+{
+SourceEntityID:   1,
+TargetEntityID:   3,
+SourceEntityName: "Product",
+TargetEntityName: "Stock",
+RelationType:     models.RelationTypeHasMany,
+SourceFieldName:  "product_id",
+OnDelete:         "CASCADE",
+OnUpdate:         "CASCADE",
+Required:         true,
+},
+}
+
+sql := service.generateMigrationSQL(stockEntity, relations)
+
+// Count occurrences of product_id
+productIDCount := strings.Count(sql, "product_id")
+
+// Should appear exactly 2 times:
+// 1. Column definition: product_id BIGINT NOT NULL
+// 2. FK constraint: FOREIGN KEY (product_id)
+if productIDCount != 2 {
+t.Errorf("product_id should appear exactly 2 times (column + FK), found %d times in:\n%s", productIDCount, sql)
+}
+
+// Should NOT have INT type (from regular field)
+if strings.Contains(sql, "product_id INT") {
+t.Errorf("SQL should not contain 'product_id INT' (regular field should be skipped), got:\n%s", sql)
+}
+
+// Should have BIGINT type (from FK)
+if !strings.Contains(sql, "product_id BIGINT NOT NULL") {
+t.Errorf("SQL should contain 'product_id BIGINT NOT NULL' (from FK), got:\n%s", sql)
+}
+
+t.Logf("Generated SQL:\n%s", sql)
+}
