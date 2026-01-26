@@ -20,10 +20,10 @@ type Relation struct {
 	Required        bool           `db:"required" json:"required"`
 
 	// For JSON responses (populated from joins)
-	SourceEntityUUID string `db:"-" json:"source_entity_id,omitempty"`
-	TargetEntityUUID string `db:"-" json:"target_entity_id,omitempty"`
-	SourceEntityName string `db:"-" json:"source_entity_name,omitempty"`
-	TargetEntityName string `db:"-" json:"target_entity_name,omitempty"`
+	SourceEntityUUID string `db:"source_entity_uuid" json:"source_entity_id,omitempty"`
+	TargetEntityUUID string `db:"target_entity_uuid" json:"target_entity_id,omitempty"`
+	SourceEntityName string `db:"source_entity_name" json:"source_entity_name,omitempty"`
+	TargetEntityName string `db:"target_entity_name" json:"target_entity_name,omitempty"`
 }
 
 // Relation type constants

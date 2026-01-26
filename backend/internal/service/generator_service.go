@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/yourusername/lambra/internal/generator"
+	"github.com/yourusername/lambra/internal/models"
 	"github.com/yourusername/lambra/internal/repository"
 )
 
@@ -14,6 +15,7 @@ type GeneratorService struct {
 	projectRepo  *repository.ProjectRepository
 	entityRepo   *repository.EntityRepository
 	endpointRepo *repository.EndpointRepository
+	relationRepo *repository.RelationRepository
 	generator    *generator.CodeGenerator
 }
 
@@ -22,11 +24,13 @@ func NewGeneratorService(
 	projectRepo *repository.ProjectRepository,
 	entityRepo *repository.EntityRepository,
 	endpointRepo *repository.EndpointRepository,
+	relationRepo *repository.RelationRepository,
 ) *GeneratorService {
 	return &GeneratorService{
 		projectRepo:  projectRepo,
 		entityRepo:   entityRepo,
 		endpointRepo: endpointRepo,
+		relationRepo: relationRepo,
 		generator:    generator.NewCodeGenerator(),
 	}
 }
@@ -72,6 +76,13 @@ func (s *GeneratorService) GenerateEntity(ctx context.Context, entityID int64, o
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare context: %w", err)
 	}
+
+	// Fetch and add relations to context
+	relations, err := s.fetchRelationsForEntity(entity)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch relations: %w", err)
+	}
+	genCtx.Relations = relations
 
 	// Validate context
 	if err := s.generator.ValidateContext(genCtx); err != nil {
@@ -240,4 +251,59 @@ func (s *GeneratorService) GetGeneratedFilesListByUUID(ctx context.Context, enti
 	}
 
 	return s.generator.GetGeneratedFiles(entity.Name), nil
+}
+
+// fetchRelationsForEntity fetches relations for an entity and converts to RelationContext
+func (s *GeneratorService) fetchRelationsForEntity(entity *models.Entity) ([]generator.RelationContext, error) {
+var relationContexts []generator.RelationContext
+
+// Get relations where entity is source
+sourceRelations, err := s.relationRepo.GetBySourceEntity(entity.ID)
+if err != nil {
+return nil, fmt.Errorf("failed to get source relations: %w", err)
+}
+
+// Get relations where entity is target
+targetRelations, err := s.relationRepo.GetByTargetEntity(entity.ID)
+if err != nil {
+return nil, fmt.Errorf("failed to get target relations: %w", err)
+}
+
+// Convert source relations
+for _, rel := range sourceRelations {
+// For belongsTo: current entity has FK
+if rel.RelationType == "belongsTo" {
+relationContexts = append(relationContexts, generator.RelationContext{
+SourceEntityName: rel.SourceEntityName,
+SourceTableName:  generator.ToSnakeCase(rel.SourceEntityName),
+TargetEntityName: rel.TargetEntityName,
+TargetTableName:  generator.ToSnakeCase(rel.TargetEntityName),
+FieldName:        rel.SourceFieldName,
+RelationType:     rel.RelationType,
+OnDelete:         rel.OnDelete,
+OnUpdate:         rel.OnUpdate,
+IsSource:         true,
+})
+}
+}
+
+// Convert target relations
+for _, rel := range targetRelations {
+// For hasOne/hasMany: current entity (target) has FK to source
+if rel.RelationType == "hasOne" || rel.RelationType == "hasMany" {
+relationContexts = append(relationContexts, generator.RelationContext{
+SourceEntityName: rel.SourceEntityName,
+SourceTableName:  generator.ToSnakeCase(rel.SourceEntityName),
+TargetEntityName: rel.TargetEntityName,
+TargetTableName:  generator.ToSnakeCase(rel.TargetEntityName),
+FieldName:        rel.SourceFieldName,
+RelationType:     rel.RelationType,
+OnDelete:         rel.OnDelete,
+OnUpdate:         rel.OnUpdate,
+IsSource:         false,
+})
+}
+}
+
+return relationContexts, nil
 }

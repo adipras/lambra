@@ -100,7 +100,7 @@ func (h *RelationHandler) GetEntityRelations(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{
-		"data": relations,
+		"relations": relations,
 	}, "")
 }
 

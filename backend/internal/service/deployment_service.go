@@ -963,11 +963,15 @@ func (s *DeploymentService) generateMigrationSQL(entity models.Entity, relations
 		if field.Required {
 			notNull = " NOT NULL"
 		}
+		unique := ""
+		if field.Unique {
+			unique = " UNIQUE"
+		}
 		defaultVal := ""
 		if field.DefaultValue != "" {
 			defaultVal = fmt.Sprintf(" DEFAULT %s", field.DefaultValue)
 		}
-		sql.WriteString(fmt.Sprintf("\t\t\t%s %s%s%s,\n", columnName, columnType, notNull, defaultVal))
+		sql.WriteString(fmt.Sprintf("\t\t\t%s %s%s%s%s,\n", columnName, columnType, notNull, unique, defaultVal))
 	}
 
 	// 2. Add FK columns from relations table (belongsTo only)

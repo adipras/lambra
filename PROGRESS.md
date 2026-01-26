@@ -1,9 +1,9 @@
 # Lambra - Progress Tracker
 
-> **Last Updated:** 2026-01-06 (Rollback Bug Fixed ✅)
-> **Current Phase:** Phase 4.2 - Deployment Logs (100% Complete ✅)
+> **Last Updated:** 2026-01-23 (Visual Relations + Unique Constraint Fixes ✅)
+> **Current Phase:** Visual Relations Enhancement (Completed ✅)
 > **Next Phase:** Phase 2.3 - GitLab Integration (Optional)
-> **Overall Progress:** 97% (Phase 1 + 1.5 + 2.1 + 2.2 + 2.4 + 3 + 3.5 + 3.6 + 4.1 + 4.2 complete + Rollback fix)
+> **Overall Progress:** 98% (Phase 1 + 1.5 + 2.1 + 2.2 + 2.4 + 3 + 3.5 + 3.6 + 4.1 + 4.2 complete + Visual Relations complete)
 
 ---
 
@@ -1665,6 +1665,86 @@ curl -X POST http://localhost:8080/api/v1/projects \
 - `backend/internal/repository/endpoint_repository.go` - Added `SoftDeleteByEntityID()`
 - `backend/internal/service/snapshot_service.go` - Updated rollback to soft-delete endpoints
 - `backend/internal/api/handlers/deployment.go` - Fixed fmt.Fprintf warnings
+
+---
+
+## 🔧 Visual Relations Bug Fixes (2026-01-22 to 2026-01-23) - ✅ COMPLETED
+
+### Session Summary
+**Date:** 2026-01-22 to 2026-01-23  
+**Status:** Completed ✅
+
+### Issues Fixed ✅
+
+1. **Diagram View Initialization Error** ✅ FIXED
+   - **Error:** `Uncaught ReferenceError: Cannot access 'handleDeleteRelation' before initialization`
+   - **Location:** `frontend/src/components/diagram/DatabaseDiagram.jsx:154`
+   - **Cause:** Function `handleDeleteRelation` was used in `useMemo` dependency array before being defined
+   - **Fix:** Moved `handleDeleteRelation` definition before `initialNodes` and `initialEdges` useMemo hooks
+   - **Result:** Diagram view now loads without errors
+
+2. **Relation Creation API Error** ✅ FIXED
+   - **Error:** `missing destination name source_entity_uuid in *models.Relation`
+   - **Location:** `backend/internal/models/relation.go`
+   - **Cause:** Struct tags had `db:"-"` which tells sqlx to ignore fields during database scanning, but repository queries were selecting these columns
+   - **Fix:** Changed struct tags from `db:"-"` to proper db tags:
+     ```go
+     SourceEntityUUID string `db:"source_entity_uuid" json:"source_entity_id,omitempty"`
+     TargetEntityUUID string `db:"target_entity_uuid" json:"target_entity_id,omitempty"`
+     SourceEntityName string `db:"source_entity_name" json:"source_entity_name,omitempty"`
+     TargetEntityName string `db:"target_entity_name" json:"target_entity_name,omitempty"`
+     ```
+   - **Result:** Relations now save successfully to database
+
+3. **API Response Format Issue** ✅ FIXED
+   - **Issue:** Handler returns `{ data: { data: relations } }` (nested data key)
+   - **Location:** `backend/internal/api/handlers/relation.go:102-104`
+   - **Fix Applied:** Changed response from `gin.H{"data": relations}` to `gin.H{"relations": relations}`
+   - **Status:** Backend and frontend both fixed
+
+4. **Diagram Not Showing New Relations After Creation** ✅ FIXED
+   - **Problem:** User creates relation successfully but edge doesn't appear on diagram
+   - **Root Cause:** Frontend was accessing wrong response path (`response.data.relations` instead of `response.relations`)
+   - **Explanation:** 
+     - Backend returns: `{success: true, data: {relations: [...]}}`
+     - Axios interceptor returns `response.data`, so we get: `{relations: [...]}`
+     - Frontend must access `response.relations` directly
+   - **Fix:** Updated `handleRelationSubmit()` to access `response.relations`
+   - **Result:** Relations now appear immediately after creation ✅
+
+5. **UNIQUE Constraint Not Applied in Generated Migrations** ✅ FIXED
+   - **Problem:** User marks field as "unique" but duplicate values are allowed
+   - **Root Cause:** Migration template didn't check field `.Unique` property
+   - **Fixes Applied:**
+     1. Added `Unique bool` field to `FieldContext` struct in `code_generator.go`
+     2. Updated field parsing to include `Unique: field.Unique`
+     3. Updated `migrationUpTemplate` to add `UNIQUE` constraint when field is unique:
+        ```sql
+        {{ toSnake .Name }} {{ sqlType .Type .Length }}{{ if .Required }} NOT NULL{{ end }}{{ if .Unique }} UNIQUE{{ end }}
+        ```
+   - **Result:** New services will have UNIQUE constraints in migrations
+   - **Note:** Existing services need **Redeploy** to regenerate migrations with UNIQUE constraints
+
+### Files Modified
+- `frontend/src/components/diagram/DatabaseDiagram.jsx` - Fixed function ordering, response path, cleaned up debug logs
+- `backend/internal/models/relation.go` - Fixed db struct tags
+- `backend/internal/api/handlers/relation.go` - Fixed response format
+- `backend/internal/generator/code_generator.go` - Added Unique field to FieldContext
+- `backend/internal/generator/templates.go` - Added UNIQUE constraint to migration template
+
+### Testing Results
+- ✅ Create relation from diagram → Edge appears immediately
+- ✅ Refresh page → Relations persist and display correctly
+- ✅ Delete relation → Edge disappears immediately
+- ✅ New services with unique fields → UNIQUE constraint in migration
+- ⚠️ Existing services → Need redeploy to apply UNIQUE constraint
+
+### User Action Required
+**For existing services with unique fields:**
+1. Go to service detail page
+2. Click **Redeploy** button
+3. Service will be regenerated with UNIQUE constraints
+4. Test creating duplicates - should now fail with error
 
 ---
 

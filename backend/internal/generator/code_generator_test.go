@@ -414,6 +414,7 @@ func TestCodeGenerator_GenerateMigration(t *testing.T) {
 				Type:     "string",
 				GoType:   "string",
 				Required: true,
+				Unique:   true,
 			},
 		},
 	}
@@ -428,6 +429,7 @@ func TestCodeGenerator_GenerateMigration(t *testing.T) {
 		"CREATE TABLE IF NOT EXISTS users",
 		"id BIGINT PRIMARY KEY AUTO_INCREMENT",
 		"uuid CHAR(36) NOT NULL UNIQUE",
+		"email VARCHAR(255) NOT NULL UNIQUE",
 		"created_at TIMESTAMP",
 		"updated_at TIMESTAMP",
 		"deleted_at TIMESTAMP",
@@ -476,4 +478,163 @@ func TestCodeGenerator_GetGeneratedFiles(t *testing.T) {
 			t.Errorf("GetGeneratedFiles() missing file: %s", expected)
 		}
 	}
+}
+
+func TestCodeGenerator_GenerateMigrationWithMultipleUniqueFields(t *testing.T) {
+	gen := NewCodeGenerator()
+
+	// Test with fields like: sku (unique), name (unique), is_active (not unique)
+	ctx := &GenerateContext{
+		EntityName: "Product",
+		TableName:  "products",
+		Fields: []FieldContext{
+			{
+				Name:     "Sku",
+				NameLC:   "sku",
+				Type:     "string",
+				GoType:   "string",
+				Required: true,
+				Unique:   true,
+				Length:   10,
+			},
+			{
+				Name:     "Name",
+				NameLC:   "name",
+				Type:     "string",
+				GoType:   "string",
+				Required: true,
+				Unique:   true,
+			},
+			{
+				Name:     "IsActive",
+				NameLC:   "is_active",
+				Type:     "bool",
+				GoType:   "bool",
+				Required: true,
+				Unique:   false,
+			},
+		},
+	}
+
+	up, down, err := gen.GenerateMigration(ctx)
+	if err != nil {
+		t.Fatalf("GenerateMigration() error = %v", err)
+	}
+
+	// Check that UNIQUE constraint is only added to unique fields
+	if !strings.Contains(up, "sku VARCHAR(10) NOT NULL UNIQUE") {
+		t.Errorf("UP migration does not contain UNIQUE constraint for sku field")
+	}
+
+	if !strings.Contains(up, "name VARCHAR(255) NOT NULL UNIQUE") {
+		t.Errorf("UP migration does not contain UNIQUE constraint for name field")
+	}
+
+	// is_active should NOT have UNIQUE
+	if strings.Contains(up, "is_active BOOLEAN NOT NULL UNIQUE") {
+		t.Errorf("UP migration incorrectly contains UNIQUE constraint for is_active field")
+	}
+
+	// Should have is_active without UNIQUE
+	if !strings.Contains(up, "is_active BOOLEAN NOT NULL") {
+		t.Errorf("UP migration does not contain is_active field")
+	}
+
+	// Check DOWN migration
+	if !strings.Contains(down, "DROP TABLE IF EXISTS products") {
+		t.Errorf("DOWN migration does not contain DROP TABLE")
+	}
+
+	t.Logf("Generated UP migration:\n%s", up)
+}
+
+func TestCodeGenerator_GenerateDTOWithPartialUpdate(t *testing.T) {
+gen := NewCodeGenerator()
+
+ctx := &GenerateContext{
+EntityName:   "Product",
+EntityNameLC: "product",
+ModuleName:   "test-service",
+TableName:    "products",
+Fields: []FieldContext{
+{
+Name:              "Sku",
+NameLC:            "sku",
+Type:              "string",
+GoType:            "string",
+JSONTag:           `json:"sku"`,
+ValidateTag:       `validate:"required,max=10"`,
+ValidateTagUpdate: `validate:"max=10"`,
+Required:          true,
+Length:            10,
+},
+{
+Name:              "Name",
+NameLC:            "name",
+Type:              "string",
+GoType:            "string",
+JSONTag:           `json:"name"`,
+ValidateTag:       `validate:"required"`,
+ValidateTagUpdate: "",
+Required:          true,
+},
+{
+Name:              "IsActive",
+NameLC:            "is_active",
+Type:              "bool",
+GoType:            "bool",
+JSONTag:           `json:"is_active"`,
+ValidateTag:       `validate:"required"`,
+ValidateTagUpdate: "",
+Required:          true,
+},
+},
+}
+
+code, err := gen.GenerateDTO(ctx)
+if err != nil {
+t.Fatalf("GenerateDTO() error = %v", err)
+}
+
+// Check Update DTO uses pointers
+if !strings.Contains(code, "type UpdateProductRequest struct") {
+t.Errorf("Generated DTO should contain UpdateProductRequest struct")
+}
+
+// Check fields are pointers in Update DTO
+if !strings.Contains(code, "Sku *string") {
+t.Errorf("Update DTO should have Sku as pointer (*string)")
+}
+
+if !strings.Contains(code, "Name *string") {
+t.Errorf("Update DTO should have Name as pointer (*string)")
+}
+
+if !strings.Contains(code, "IsActive *bool") {
+t.Errorf("Update DTO should have IsActive as pointer (*bool)")
+}
+
+// Check Create DTO still uses non-pointers
+if !strings.Contains(code, "type CreateProductRequest struct") {
+t.Errorf("Generated DTO should contain CreateProductRequest struct")
+}
+
+// Check ValidateTagUpdate doesn't have "required"
+lines := strings.Split(code, "\n")
+inUpdateStruct := false
+for _, line := range lines {
+if strings.Contains(line, "type UpdateProductRequest struct") {
+inUpdateStruct = true
+}
+if inUpdateStruct && strings.Contains(line, "type Create") {
+inUpdateStruct = false
+}
+if inUpdateStruct && strings.Contains(line, "validate:") {
+if strings.Contains(line, "required") {
+t.Errorf("Update DTO should not have 'required' validation: %s", line)
+}
+}
+}
+
+t.Logf("Generated DTO:\n%s", code)
 }

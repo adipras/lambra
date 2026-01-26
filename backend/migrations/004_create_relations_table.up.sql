@@ -31,8 +31,8 @@ CREATE TABLE IF NOT EXISTS relations (
     deleted_at DATETIME,
     
     -- Foreign keys
-    CONSTRAINT fk_relation_source_entity FOREIGN KEY (source_entity_id) REFERENCES entities(id),
-    CONSTRAINT fk_relation_target_entity FOREIGN KEY (target_entity_id) REFERENCES entities(id),
+    CONSTRAINT fk_relation_source_entity FOREIGN KEY (source_entity_id) REFERENCES entities(id) ON DELETE CASCADE,
+    CONSTRAINT fk_relation_target_entity FOREIGN KEY (target_entity_id) REFERENCES entities(id) ON DELETE CASCADE,
     
     -- Indexes
     INDEX idx_relation_uuid (uuid),

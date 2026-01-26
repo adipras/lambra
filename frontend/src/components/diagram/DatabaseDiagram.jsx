@@ -75,6 +75,30 @@ const DatabaseDiagram = ({ entities = [], onSave, projectId }) => {
     fetchAllRelations()
   }, [entities])
 
+  // Handle delete relation
+  const handleDeleteRelation = useCallback(async (relationId) => {
+    try {
+      await deleteRelation(relationId)
+      
+      // Refetch relations
+      const allRelations = []
+      for (const entity of entities) {
+        const response = await getRelationsByEntity(entity.id)
+        if (response.data && response.data.relations) {
+          allRelations.push(...response.data.relations)
+        }
+      }
+      setRelations(allRelations)
+      
+      // Invalidate queries
+      queryClient.invalidateQueries(['entities'])
+      queryClient.invalidateQueries(['project'])
+    } catch (error) {
+      console.error('Failed to delete relation:', error)
+      alert('Failed to delete relation: ' + (error.response?.data?.error || error.message))
+    }
+  }, [entities, queryClient])
+
   // Convert entities to nodes
   const initialNodes = useMemo(() => {
     return entities.map((entity, index) => ({
@@ -187,8 +211,8 @@ const DatabaseDiagram = ({ entities = [], onSave, projectId }) => {
       const allRelations = []
       for (const entity of entities) {
         const response = await getRelationsByEntity(entity.id)
-        if (response.data && response.data.relations) {
-          allRelations.push(...response.data.relations)
+        if (response && response.relations) {
+          allRelations.push(...response.relations)
         }
       }
       setRelations(allRelations)
@@ -196,6 +220,9 @@ const DatabaseDiagram = ({ entities = [], onSave, projectId }) => {
       // Invalidate queries to refresh entity list if needed
       queryClient.invalidateQueries(['entities'])
       queryClient.invalidateQueries(['project'])
+      
+      // Show success feedback
+      alert('Relation created successfully!')
       
       setIsRelationModalOpen(false)
       setPendingConnection(null)
@@ -209,29 +236,6 @@ const DatabaseDiagram = ({ entities = [], onSave, projectId }) => {
     setIsRelationModalOpen(false)
     setPendingConnection(null)
   }
-
-  const handleDeleteRelation = useCallback(async (relationId) => {
-    try {
-      await deleteRelation(relationId)
-      
-      // Refetch relations
-      const allRelations = []
-      for (const entity of entities) {
-        const response = await getRelationsByEntity(entity.id)
-        if (response.data && response.data.relations) {
-          allRelations.push(...response.data.relations)
-        }
-      }
-      setRelations(allRelations)
-      
-      // Invalidate queries
-      queryClient.invalidateQueries(['entities'])
-      queryClient.invalidateQueries(['project'])
-    } catch (error) {
-      console.error('Failed to delete relation:', error)
-      alert('Failed to delete relation: ' + (error.response?.data?.error || error.message))
-    }
-  }, [entities, queryClient])
 
   const onLayout = useCallback(() => {
     const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(nodes, edges)

@@ -10,7 +10,7 @@
 
 @layer components {
   .btn {
-    @apply px-4 py-2 rounded-lg font-medium transition-colors;
+    @apply px-4 py-2 rounded-lg font-medium transition-colors flex items-center justify-center;
   }
 
   .btn-primary {

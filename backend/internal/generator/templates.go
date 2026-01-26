@@ -436,8 +436,6 @@ func (h *{{ .EntityName }}Handler) Update{{ .EntityName }}(c *gin.Context) {
 		return
 	}
 
-	{{ .EntityNameLC }} := req.ToModel()
-
 	// Get existing record by UUID to get internal ID
 	existing, err := h.service.GetByUUID(c.Request.Context(), uuidVal)
 	if err != nil {
@@ -445,8 +443,17 @@ func (h *{{ .EntityName }}Handler) Update{{ .EntityName }}(c *gin.Context) {
 		return
 	}
 
+	// Merge: only update fields that are provided (non-nil)
+{{- range .Fields }}
+{{- if not .IsForeignKey }}
+	if req.{{ .Name }} != nil {
+		existing.{{ .Name }} = *req.{{ .Name }}
+	}
+{{- end }}
+{{- end }}
+
 	// Update using internal ID
-	if err := h.service.Update(c.Request.Context(), existing.ID, {{ .EntityNameLC }}); err != nil {
+	if err := h.service.Update(c.Request.Context(), existing.ID, existing); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -528,22 +535,36 @@ func (r Create{{ .EntityName }}Request) ToModel() *models.{{ .EntityName }} {
 
 // Update{{ .EntityName }}Request represents a request to update a {{ toLower .EntityName }}
 // NOTE: FK fields use UUID (e.g., category_uuid) - translation to internal ID happens in handler
+// NOTE: All fields are optional pointers to support partial updates
 type Update{{ .EntityName }}Request struct {
 {{- range .Fields }}
 {{- if .IsForeignKey }}
-	{{ .FKName }} string ` + "`" + `{{ .FKJSONTag }}{{ if .ValidateTag }} {{ .ValidateTag }}{{ end }}` + "`" + ` // UUID of related entity
+	{{ .FKName }} *string ` + "`" + `{{ .FKJSONTag }},omitempty{{ if .ValidateTagUpdate }} {{ .ValidateTagUpdate }}{{ end }}` + "`" + ` // UUID of related entity
 {{- else }}
-	{{ .Name }} {{ .GoType }} ` + "`" + `{{ .JSONTag }}{{ if .ValidateTag }} {{ .ValidateTag }}{{ end }}` + "`" + `
+	{{ .Name }} *{{ .GoType }} ` + "`" + `json:"{{ toSnake .Name }},omitempty"{{ if .ValidateTagUpdate }} {{ .ValidateTagUpdate }}{{ end }}` + "`" + `
 {{- end }}
 {{- end }}
 }
 
 // ToModel converts the request to a model (FK fields need UUID→ID translation in handler)
+// Only updates fields that are non-nil
 func (r Update{{ .EntityName }}Request) ToModel() *models.{{ .EntityName }} {
 	return &models.{{ .EntityName }}{
 {{- range .Fields }}
 {{- if not .IsForeignKey }}
-		{{ .Name }}: r.{{ .Name }},
+{{- if eq .GoType "string" }}
+		{{ .Name }}: func() string { if r.{{ .Name }} != nil { return *r.{{ .Name }} }; return "" }(),
+{{- else if eq .GoType "int" }}
+		{{ .Name }}: func() int { if r.{{ .Name }} != nil { return *r.{{ .Name }} }; return 0 }(),
+{{- else if eq .GoType "int64" }}
+		{{ .Name }}: func() int64 { if r.{{ .Name }} != nil { return *r.{{ .Name }} }; return 0 }(),
+{{- else if eq .GoType "float64" }}
+		{{ .Name }}: func() float64 { if r.{{ .Name }} != nil { return *r.{{ .Name }} }; return 0 }(),
+{{- else if eq .GoType "bool" }}
+		{{ .Name }}: func() bool { if r.{{ .Name }} != nil { return *r.{{ .Name }} }; return false }(),
+{{- else }}
+		{{ .Name }}: func() {{ .GoType }} { if r.{{ .Name }} != nil { return *r.{{ .Name }} }; return {{ .GoType }}{} }(),
+{{- end }}
 {{- end }}
 {{- end }}
 	}
@@ -597,7 +618,7 @@ CREATE TABLE IF NOT EXISTS {{ .TableName }} (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     uuid CHAR(36) NOT NULL UNIQUE,
 {{- range .Fields }}
-    {{ toSnake .Name }} {{ sqlType .Type .Length }}{{ if .Required }} NOT NULL{{ end }}{{ if .DefaultValue }} DEFAULT {{ .DefaultValue }}{{ end }},
+    {{ toSnake .Name }} {{ sqlType .Type .Length }}{{ if .Required }} NOT NULL{{ end }}{{ if .Unique }} UNIQUE{{ end }}{{ if .DefaultValue }} DEFAULT {{ .DefaultValue }}{{ end }},
 {{- end }}
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -608,6 +629,18 @@ CREATE TABLE IF NOT EXISTS {{ .TableName }} (
 CREATE INDEX idx_{{ .TableName }}_uuid ON {{ .TableName }}(uuid);
 CREATE INDEX idx_{{ .TableName }}_deleted_at ON {{ .TableName }}(deleted_at);
 CREATE INDEX idx_{{ .TableName }}_created_at ON {{ .TableName }}(created_at);
+
+{{- if .Relations }}
+-- Add foreign key constraints
+{{- range .Relations }}
+{{- if or (eq .RelationType "belongsTo") (and (or (eq .RelationType "hasOne") (eq .RelationType "hasMany")) (not .IsSource)) }}
+ALTER TABLE {{ if .IsSource }}{{ $.TableName }}{{ else }}{{ .TargetTableName }}{{ end }}
+ADD CONSTRAINT fk_{{ if .IsSource }}{{ $.TableName }}{{ else }}{{ .TargetTableName }}{{ end }}_{{ .FieldName }}
+FOREIGN KEY ({{ .FieldName }}) REFERENCES {{ if .IsSource }}{{ .TargetTableName }}{{ else }}{{ .SourceTableName }}{{ end }}(id)
+ON DELETE {{ .OnDelete }} ON UPDATE {{ .OnUpdate }};
+{{- end }}
+{{- end }}
+{{- end }}
 `
 
 // Migration down template

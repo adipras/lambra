@@ -28,6 +28,7 @@ type GenerateContext struct {
 	Project      *models.Project
 	Entity       *models.Entity
 	Fields       []FieldContext
+	Relations    []RelationContext // Relations where this entity is involved
 	PackageName  string
 	ModuleName   string // Module name for the generated service (e.g., "my-service")
 	Imports      []string
@@ -38,20 +39,35 @@ type GenerateContext struct {
 	HasTimestamp bool
 }
 
+// RelationContext represents a relation for template rendering
+type RelationContext struct {
+	SourceEntityName string
+	SourceTableName  string
+	TargetEntityName string
+	TargetTableName  string
+	FieldName        string // FK column name
+	RelationType     string // belongsTo, hasOne, hasMany, manyToMany
+	OnDelete         string
+	OnUpdate         string
+	IsSource         bool // True if current entity is source
+}
+
 // FieldContext represents a field for template rendering
 type FieldContext struct {
-	Name         string
-	NameLC       string
-	Type         string
-	GoType       string
-	JSONTag      string
-	DBTag        string
-	ValidateTag  string
-	Required     bool
-	Nullable     bool
-	DefaultValue string
-	Description  string
-	Length       int
+	Name              string
+	NameLC            string
+	Type              string
+	GoType            string
+	JSONTag           string
+	DBTag             string
+	ValidateTag       string // For Create (includes required)
+	ValidateTagUpdate string // For Update (without required, only max length)
+	Required          bool
+	Unique            bool
+	Nullable          bool
+	DefaultValue      string
+	Description       string
+	Length            int
 	// FK fields (fields ending with _id)
 	IsForeignKey bool   // True if field ends with _id
 	FKName       string // UUID field name for API (e.g., category_id -> CategoryUUID)
@@ -204,6 +220,16 @@ func (g *CodeGenerator) parseField(field models.EntityField) FieldContext {
 		validateTag = fmt.Sprintf(`validate:"%s"`, validateRules)
 	}
 
+	// For Update: only max length validation, no required
+	validateRulesUpdate := ""
+	if field.Length > 0 {
+		validateRulesUpdate = fmt.Sprintf("max=%d", field.Length)
+	}
+	validateTagUpdate := ""
+	if validateRulesUpdate != "" {
+		validateTagUpdate = fmt.Sprintf(`validate:"%s"`, validateRulesUpdate)
+	}
+
 	fieldName := toPascalCase(field.Name)
 	fieldNameLC := toCamelCase(field.Name)
 
@@ -227,22 +253,24 @@ func (g *CodeGenerator) parseField(field models.EntityField) FieldContext {
 	}
 
 	return FieldContext{
-		Name:         fieldName,
-		NameLC:       fieldNameLC,
-		Type:         field.Type,
-		GoType:       goType,
-		JSONTag:      toJSONTag(field.Name, field.Required),
-		DBTag:        toDBTag(field.Name),
-		ValidateTag:  validateTag,
-		Required:     field.Required,
-		Nullable:     nullable,
-		DefaultValue: field.DefaultValue,
-		Description:  field.Description,
-		Length:       field.Length,
-		IsForeignKey: isForeignKey,
-		FKName:       fkName,
-		FKNameLC:     fkNameLC,
-		FKJSONTag:    fkJSONTag,
+		Name:              fieldName,
+		NameLC:            fieldNameLC,
+		Type:              field.Type,
+		GoType:            goType,
+		JSONTag:           toJSONTag(field.Name, field.Required),
+		DBTag:             toDBTag(field.Name),
+		ValidateTag:       validateTag,
+		ValidateTagUpdate: validateTagUpdate,
+		Required:          field.Required,
+		Unique:            field.Unique,
+		Nullable:          nullable,
+		DefaultValue:      field.DefaultValue,
+		Description:       field.Description,
+		Length:            field.Length,
+		IsForeignKey:      isForeignKey,
+		FKName:            fkName,
+		FKNameLC:          fkNameLC,
+		FKJSONTag:         fkJSONTag,
 	}
 }
 
