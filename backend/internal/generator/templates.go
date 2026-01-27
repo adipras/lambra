@@ -388,7 +388,7 @@ func (h *{{ .EntityName }}Handler) Create{{ .EntityName }}(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, dto.{{ .EntityName }}Response{}.FromModel({{ .EntityNameLC }}))
+	c.JSON(http.StatusCreated, dto.{{ .EntityName }}Response{}.FromModel({{ .EntityNameLC }}, h.db))
 }
 
 // Get{{ .EntityName }} retrieves a {{ toLower .EntityName }} by UUID (query param: id)
@@ -412,7 +412,7 @@ func (h *{{ .EntityName }}Handler) Get{{ .EntityName }}(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, dto.{{ .EntityName }}Response{}.FromModel({{ .EntityNameLC }}))
+	c.JSON(http.StatusOK, dto.{{ .EntityName }}Response{}.FromModel({{ .EntityNameLC }}, h.db))
 }
 
 // List{{ pluralize .EntityName }} retrieves all {{ pluralize (toLower .EntityName) }}
@@ -428,7 +428,7 @@ func (h *{{ .EntityName }}Handler) List{{ pluralize .EntityName }}(c *gin.Contex
 
 	response := make([]dto.{{ .EntityName }}Response, len({{ .EntityNameLC }}s))
 	for i, {{ .EntityNameLC }} := range {{ .EntityNameLC }}s {
-		response[i] = dto.{{ .EntityName }}Response{}.FromModel({{ .EntityNameLC }})
+		response[i] = dto.{{ .EntityName }}Response{}.FromModel({{ .EntityNameLC }}, h.db)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -505,7 +505,7 @@ func (h *{{ .EntityName }}Handler) Update{{ .EntityName }}(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, dto.{{ .EntityName }}Response{}.FromModel(updated))
+	c.JSON(http.StatusOK, dto.{{ .EntityName }}Response{}.FromModel(updated, h.db))
 }
 
 // Delete{{ .EntityName }} deletes a {{ toLower .EntityName }} by UUID (query param: id)
@@ -629,19 +629,16 @@ type {{ .EntityName }}Response struct {
 
 // FromModel converts a model to a response
 // NOTE: FK fields need ID→UUID translation (lookup related entity's UUID by ID)
-func (r {{ .EntityName }}Response) FromModel({{ .EntityNameLC }} *models.{{ .EntityName }}) {{ .EntityName }}Response {
+func (r {{ .EntityName }}Response) FromModel({{ .EntityNameLC }} *models.{{ .EntityName }}, db *sqlx.DB) {{ .EntityName }}Response {
 	var deletedAt *time.Time
 	if {{ .EntityNameLC }}.DeletedAt.Valid {
 		deletedAt = &{{ .EntityNameLC }}.DeletedAt.Time
 	}
 
-	return {{ .EntityName }}Response{
+	response := {{ .EntityName }}Response{
 		UUID:      {{ .EntityNameLC }}.UUID, // UUID for frontend, internal ID stays hidden
 {{- range .Fields }}
-{{- if .IsForeignKey }}
-		// TODO: {{ .FKName }} needs ID→UUID translation (lookup related entity by {{ .Name }})
-		{{ .FKName }}: "", // Placeholder - needs translation from {{ .Name }} (int64) to UUID
-{{- else }}
+{{- if not .IsForeignKey }}
 		{{ .Name }}: {{ $.EntityNameLC }}.{{ .Name }},
 {{- end }}
 {{- end }}
@@ -649,6 +646,21 @@ func (r {{ .EntityName }}Response) FromModel({{ .EntityNameLC }} *models.{{ .Ent
 		UpdatedAt: {{ .EntityNameLC }}.UpdatedAt,
 		DeletedAt: deletedAt,
 	}
+
+	// Translate FK IDs to UUIDs
+{{- range .Fields }}
+{{- if .IsForeignKey }}
+	if {{ $.EntityNameLC }}.{{ .Name }} != 0 {
+		var fkUUID string
+		err := db.Get(&fkUUID, "SELECT uuid FROM {{ toSnake (trimSuffix .Name "Id") }}s WHERE id = ?", {{ $.EntityNameLC }}.{{ .Name }})
+		if err == nil {
+			response.{{ .FKName }} = fkUUID
+		}
+	}
+{{- end }}
+{{- end }}
+
+	return response
 }
 `
 

@@ -21,7 +21,8 @@ export const generateExampleFromSchema = (schema) => {
             example[key] = new Date().toISOString()
           } else if (prop.format === 'date') {
             example[key] = new Date().toISOString().split('T')[0]
-          } else if (prop.format === 'uuid') {
+          } else if (prop.format === 'uuid' || key.endsWith('_uuid')) {
+            // Generate UUID for uuid format or fields ending with _uuid (FK fields)
             example[key] = '550e8400-e29b-41d4-a716-446655440000'
           } else {
             example[key] = `example_${key}`
