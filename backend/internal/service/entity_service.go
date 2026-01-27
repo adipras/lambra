@@ -13,13 +13,15 @@ type EntityService struct {
 	repo         *repository.EntityRepository
 	projectRepo  *repository.ProjectRepository
 	endpointRepo *repository.EndpointRepository
+	relationRepo *repository.RelationRepository
 }
 
-func NewEntityService(repo *repository.EntityRepository, projectRepo *repository.ProjectRepository, endpointRepo *repository.EndpointRepository) *EntityService {
+func NewEntityService(repo *repository.EntityRepository, projectRepo *repository.ProjectRepository, endpointRepo *repository.EndpointRepository, relationRepo *repository.RelationRepository) *EntityService {
 	return &EntityService{
 		repo:         repo,
 		projectRepo:  projectRepo,
 		endpointRepo: endpointRepo,
+		relationRepo: relationRepo,
 	}
 }
 
@@ -81,14 +83,23 @@ func (s *EntityService) generateCRUDEndpoints(entity *models.Entity, projectID i
 		fields = []models.EntityField{} // fallback to empty if parse fails
 	}
 
-	// Generate schemas based on entity fields
-	requestSchema := s.generateRequestSchema(fields)
-	responseSchema := s.generateResponseSchema(fields, entityNameLower)
+	// Generate schemas based on entity fields and relations
+	relations, err := s.relationRepo.GetBySourceEntity(entity.ID)
+	if err != nil {
+		relations = []models.Relation{} // fallback to empty
+	}
+	targetRelations, err := s.relationRepo.GetByTargetEntity(entity.ID)
+	if err != nil {
+		targetRelations = []models.Relation{}
+	}
+	
+	requestSchema := s.generateRequestSchema(fields, entity.ID, relations, targetRelations)
+	responseSchema := s.generateResponseSchema(fields, entityNameLower, relations, targetRelations)
 	listResponseSchema := s.generateListResponseSchema(fields, entityNameLower)
 
 	// Generate query param schema for id parameter
 	idQueryParamSchema := s.generateIDQueryParamSchema()
-	updateRequestSchema := s.generateUpdateRequestSchema(fields)
+	updateRequestSchema := s.generateUpdateRequestSchema(fields, entity.ID, relations, targetRelations)
 
 	endpoints := []struct {
 		enabled        bool
@@ -134,11 +145,37 @@ func (s *EntityService) generateCRUDEndpoints(entity *models.Entity, projectID i
 }
 
 // generateRequestSchema creates JSON schema for create/update request body
-func (s *EntityService) generateRequestSchema(fields []models.EntityField) json.RawMessage {
+func (s *EntityService) generateRequestSchema(fields []models.EntityField, entityID int64, sourceRelations []models.Relation, targetRelations []models.Relation) json.RawMessage {
 	properties := make(map[string]interface{})
 	required := []string{}
+	
+	// Collect FK fields from relations
+	fkFields := make(map[string]models.Relation)
+	
+	// For belongsTo: this entity has FK
+	for _, rel := range sourceRelations {
+		if rel.RelationType == models.RelationTypeBelongsTo {
+			fkFields[rel.SourceFieldName] = rel
+		}
+	}
+	
+	// For hasOne/hasMany: this entity (as target) has FK
+	for _, rel := range targetRelations {
+		if rel.RelationType == models.RelationTypeHasOne || rel.RelationType == models.RelationTypeHasMany {
+			fkFields[rel.SourceFieldName] = rel
+		}
+	}
 
+	// Add regular fields (skip FK fields)
 	for _, field := range fields {
+		fieldName := toSnakeCase(field.Name)
+		
+		// Skip if this field is a FK from relation
+		if _, isFKField := fkFields[fieldName]; isFKField {
+			continue
+		}
+		
+		// Regular field
 		fieldSchema := map[string]interface{}{
 			"type": fieldTypeToJSONType(field.Type),
 		}
@@ -152,10 +189,36 @@ func (s *EntityService) generateRequestSchema(fields []models.EntityField) json.
 		// Add example values
 		fieldSchema["example"] = getExampleValue(field)
 
-		properties[toSnakeCase(field.Name)] = fieldSchema
+		properties[fieldName] = fieldSchema
 
 		if field.Required {
-			required = append(required, toSnakeCase(field.Name))
+			required = append(required, fieldName)
+		}
+	}
+	
+	// Add FK UUID fields from relations
+	for fkFieldName, rel := range fkFields {
+		// Transform FK field to UUID field for API
+		// e.g., product_id -> product_uuid
+		baseName := strings.TrimSuffix(fkFieldName, "_id")
+		uuidFieldName := baseName + "_uuid"
+		
+		relatedEntityName := rel.TargetEntityName
+		if rel.RelationType == models.RelationTypeHasOne || rel.RelationType == models.RelationTypeHasMany {
+			relatedEntityName = rel.SourceEntityName
+		}
+		
+		fieldSchema := map[string]interface{}{
+			"type":        "string",
+			"format":      "uuid",
+			"description": "UUID of related " + relatedEntityName,
+			"example":     "550e8400-e29b-41d4-a716-446655440000",
+		}
+		
+		properties[uuidFieldName] = fieldSchema
+		
+		if rel.Required {
+			required = append(required, uuidFieldName)
 		}
 	}
 
@@ -172,7 +235,7 @@ func (s *EntityService) generateRequestSchema(fields []models.EntityField) json.
 }
 
 // generateResponseSchema creates JSON schema for single entity response
-func (s *EntityService) generateResponseSchema(fields []models.EntityField, entityName string) json.RawMessage {
+func (s *EntityService) generateResponseSchema(fields []models.EntityField, entityName string, sourceRelations []models.Relation, targetRelations []models.Relation) json.RawMessage {
 	properties := map[string]interface{}{
 		"id":   map[string]interface{}{"type": "integer", "description": "Unique identifier", "example": 1},
 		"uuid": map[string]interface{}{"type": "string", "format": "uuid", "description": "UUID identifier", "example": "550e8400-e29b-41d4-a716-446655440000"},
@@ -273,12 +336,33 @@ func (s *EntityService) generateIDQueryParamSchema() json.RawMessage {
 
 // generateUpdateRequestSchema creates JSON schema for update request
 // It separates query params (id) from body fields
-func (s *EntityService) generateUpdateRequestSchema(fields []models.EntityField) json.RawMessage {
+func (s *EntityService) generateUpdateRequestSchema(fields []models.EntityField, entityID int64, sourceRelations []models.Relation, targetRelations []models.Relation) json.RawMessage {
 	bodyProperties := make(map[string]interface{})
+	
+	// Collect FK fields from relations
+	fkFields := make(map[string]models.Relation)
+	for _, rel := range sourceRelations {
+		if rel.RelationType == models.RelationTypeBelongsTo {
+			fkFields[rel.SourceFieldName] = rel
+		}
+	}
+	for _, rel := range targetRelations {
+		if rel.RelationType == models.RelationTypeHasOne || rel.RelationType == models.RelationTypeHasMany {
+			fkFields[rel.SourceFieldName] = rel
+		}
+	}
 
+	// Add regular fields (skip FK fields)
 	for _, field := range fields {
-		// Skip relation fields for now
+		// Skip relation fields
 		if field.Type == "relation" {
+			continue
+		}
+		
+		fieldName := toSnakeCase(field.Name)
+		
+		// Skip if this field is a FK from relation
+		if _, isFKField := fkFields[fieldName]; isFKField {
 			continue
 		}
 
@@ -289,7 +373,26 @@ func (s *EntityService) generateUpdateRequestSchema(fields []models.EntityField)
 		if field.Type == "string" && field.Length > 0 {
 			prop["maxLength"] = field.Length
 		}
-		bodyProperties[field.Name] = prop
+		bodyProperties[fieldName] = prop
+	}
+	
+	// Add FK UUID fields from relations
+	for fkFieldName, rel := range fkFields {
+		baseName := strings.TrimSuffix(fkFieldName, "_id")
+		uuidFieldName := baseName + "_uuid"
+		
+		relatedEntityName := rel.TargetEntityName
+		if rel.RelationType == models.RelationTypeHasOne || rel.RelationType == models.RelationTypeHasMany {
+			relatedEntityName = rel.SourceEntityName
+		}
+		
+		prop := map[string]interface{}{
+			"type":        "string",
+			"format":      "uuid",
+			"description": "UUID of related " + relatedEntityName,
+			"example":     "550e8400-e29b-41d4-a716-446655440000",
+		}
+		bodyProperties[uuidFieldName] = prop
 	}
 
 	schema := map[string]interface{}{

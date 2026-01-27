@@ -35,7 +35,7 @@ func Setup(db *sqlx.DB) *gin.Engine {
 
 	// Initialize services
 	projectService := service.NewProjectService(projectRepo)
-	entityService := service.NewEntityService(entityRepo, projectRepo, endpointRepo)
+	entityService := service.NewEntityService(entityRepo, projectRepo, endpointRepo, relationRepo)
 	endpointService := service.NewEndpointService(endpointRepo, entityRepo, projectRepo)
 	relationService := service.NewRelationService(relationRepo, entityRepo)
 	generatorService := service.NewGeneratorService(projectRepo, entityRepo, endpointRepo, relationRepo)
