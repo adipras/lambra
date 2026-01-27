@@ -31,7 +31,7 @@ func ({{ .EntityNameLC }} *{{ .EntityName }}) TableName() string {
 // Validate validates the {{ .EntityName }} model
 func ({{ .EntityNameLC }} *{{ .EntityName }}) Validate() error {
 {{- range .Fields }}
-{{- if .Required }}
+{{- if and .Required (not .IsForeignKey) }}
 {{- if eq .GoType "bool" }}
 	// bool fields are always valid (false is a valid value)
 {{- else }}
