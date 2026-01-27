@@ -33,6 +33,8 @@ func NewTemplateEngine() *TemplateEngine {
 		"contains":    strings.Contains,
 		"hasPrefix":   strings.HasPrefix,
 		"hasSuffix":   strings.HasSuffix,
+		"trimSuffix":  strings.TrimSuffix,
+		"trimPrefix":  strings.TrimPrefix,
 		"trim":        strings.TrimSpace,
 		"split":       strings.Split,
 		"repeat":      strings.Repeat,

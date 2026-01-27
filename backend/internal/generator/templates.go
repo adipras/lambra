@@ -334,6 +334,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/jmoiron/sqlx"
 	"{{ .ModuleName }}/api/dto"
 	"{{ .ModuleName }}/service"
 )
@@ -341,12 +342,14 @@ import (
 // {{ .EntityName }}Handler handles HTTP requests for {{ pluralize (toLower .EntityName) }}
 type {{ .EntityName }}Handler struct {
 	service *service.{{ .EntityName }}Service
+	db      *sqlx.DB // For FK UUID→ID translation
 }
 
 // New{{ .EntityName }}Handler creates a new {{ .EntityName }} handler
-func New{{ .EntityName }}Handler(service *service.{{ .EntityName }}Service) *{{ .EntityName }}Handler {
+func New{{ .EntityName }}Handler(service *service.{{ .EntityName }}Service, db *sqlx.DB) *{{ .EntityName }}Handler {
 	return &{{ .EntityName }}Handler{
 		service: service,
+		db:      db,
 	}
 }
 
@@ -359,6 +362,27 @@ func (h *{{ .EntityName }}Handler) Create{{ .EntityName }}(c *gin.Context) {
 	}
 
 	{{ .EntityNameLC }} := req.ToModel()
+	
+	// Translate FK UUIDs to internal IDs
+{{- range .Fields }}
+{{- if .IsForeignKey }}
+	if req.{{ .FKName }} != "" {
+		{{ .FKNameLC }}, err := uuid.Parse(req.{{ .FKName }})
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid {{ .FKNameLC }} format"})
+			return
+		}
+		var fkID int64
+		err = h.db.Get(&fkID, "SELECT id FROM {{ toSnake (trimSuffix .Name "Id") }}s WHERE uuid = ? AND deleted_at IS NULL", {{ .FKNameLC }}.String())
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "{{ .FKName }} not found"})
+			return
+		}
+		{{ $.EntityNameLC }}.{{ .Name }} = fkID
+	}
+{{- end }}
+{{- end }}
+	
 	if err := h.service.Create(c.Request.Context(), {{ .EntityNameLC }}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -445,7 +469,23 @@ func (h *{{ .EntityName }}Handler) Update{{ .EntityName }}(c *gin.Context) {
 
 	// Merge: only update fields that are provided (non-nil)
 {{- range .Fields }}
-{{- if not .IsForeignKey }}
+{{- if .IsForeignKey }}
+	// Translate FK UUID to internal ID
+	if req.{{ .FKName }} != nil && *req.{{ .FKName }} != "" {
+		{{ .FKNameLC }}, err := uuid.Parse(*req.{{ .FKName }})
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid {{ .FKNameLC }} format"})
+			return
+		}
+		var fkID int64
+		err = h.db.Get(&fkID, "SELECT id FROM {{ toSnake (trimSuffix .Name "Id") }}s WHERE uuid = ? AND deleted_at IS NULL", {{ .FKNameLC }}.String())
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "{{ .FKName }} not found"})
+			return
+		}
+		existing.{{ .Name }} = fkID
+	}
+{{- else }}
 	if req.{{ .Name }} != nil {
 		existing.{{ .Name }} = *req.{{ .Name }}
 	}

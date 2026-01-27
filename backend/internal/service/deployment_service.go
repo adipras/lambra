@@ -806,7 +806,7 @@ require (
 		// Repository, Service, Handler initialization
 		inits.WriteString(fmt.Sprintf("\t%sRepo := repository.New%sRepository(db)\n", entityNameLower, entityNamePascal))
 		inits.WriteString(fmt.Sprintf("\t%sSvc := service.New%sService(%sRepo)\n", entityNameLower, entityNamePascal, entityNameLower))
-		inits.WriteString(fmt.Sprintf("\t%sHandler := handlers.New%sHandler(%sSvc)\n\n", entityNameLower, entityNamePascal, entityNameLower))
+		inits.WriteString(fmt.Sprintf("\t%sHandler := handlers.New%sHandler(%sSvc, db)\n\n", entityNameLower, entityNamePascal, entityNameLower))
 
 		// Generate migration SQL for this entity (with relations)
 		migrationSQL := s.generateMigrationSQL(entity, relations)
