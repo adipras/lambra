@@ -418,18 +418,39 @@ CREATE TABLE posts (
 - Always use `{entity}_id` format for FK fields
 - Example: `user_id`, `product_id`, `category_id`
 - Consistent with snake_case
+- Custom names allowed: `author_id`, `owner_id`, `parent_id`
 
-### **2. API Consistency:**
+### **2. Field Name Selection:**
+User can customize FK field name, but must follow rules:
+- ✅ **Allowed**: `user_id`, `author_id`, `owner_id`, `created_by_id`
+- ⚠️ **Caution**: `user`, `author` (missing _id suffix, but still allowed)
+- ❌ **Not Recommended**: `userId`, `UserID` (not snake_case)
+- ❌ **Conflict**: Field name that exists with different type
+
+### **3. Type Consistency:**
+- FK field is **always BIGINT** (matches PK type)
+- User only customizes field **name**, not type
+- If entity has existing field with same name:
+  - If type is `int` or `int64`: OK (will be overridden to BIGINT)
+  - If type is other (string, bool, etc): **ERROR - conflict**
+
+### **4. Validation Rules:**
+- ✅ Minimum 3 characters
+- ✅ No conflict with existing non-FK fields
+- ✅ Snake_case format (auto-converted)
+- ✅ Validates in correct entity based on relation type
+
+### **5. API Consistency:**
 - Always expose as `{entity}_uuid` in API
 - Example: `user_uuid`, `product_uuid`
 - Never expose internal IDs
 
-### **3. Validation:**
+### **6. Validation:**
 - Check if target entity exists before creating relation
 - Validate FK field name doesn't conflict with existing fields
 - Ensure target table exists in database
 
-### **4. Documentation:**
+### **7. Documentation:**
 - Comment in code which entity has FK
 - Example: `// FK product_id exists in stocks table (target)`
 
@@ -478,6 +499,21 @@ A: For API consistency. We always describe relation from source perspective:
 
 **Q: Can I customize FK field name?**
 A: Yes! Set `source_field_name` when creating relation. Default is `{source_entity}_id`.
+Examples: `author_id`, `owner_id`, `created_by_id`, `parent_id` - any name is allowed!
+
+**Q: What if FK field name conflicts with existing field?**
+A: Validation checks for conflicts:
+- If existing field is `int` or `int64` → OK (will be overridden to BIGINT)
+- If existing field is other type (string, bool, etc) → ERROR (must choose different name)
+- Error message shows which entity has the conflict
+
+**Q: Can I use field names without '_id' suffix?**
+A: Yes, but not recommended. Examples like `owner` or `author` work, but `owner_id` is clearer.
+The system validates name length (min 3 chars) but allows any format.
+
+**Q: What type will the FK field be?**
+A: Always `BIGINT NOT NULL` (matches primary key type). 
+User only customizes the field NAME, not the type.
 
 **Q: What if I want bidirectional relation?**
 A: Create TWO relations:
@@ -489,6 +525,10 @@ A: Not supported yet. Use manyToMany with junction table.
 
 **Q: Can I change relation type after creation?**
 A: Requires re-deployment. Old FK will be dropped, new one created.
+
+**Q: What happens if I delete entity with relations?**
+A: Relations are automatically deleted (cascade delete in relations table).
+Generated service uses FK constraints with ON DELETE behavior you specify.
 
 ---
 
