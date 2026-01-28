@@ -60,6 +60,82 @@ export default function RelationModal({ isOpen, onClose, onSubmit, sourceEntity,
   });
 
   const [errors, setErrors] = useState({});
+  const [availableFields, setAvailableFields] = useState([]);
+
+  // Get available fields from the entity that will have the FK
+  const getAvailableFields = (relationType) => {
+    if (!sourceEntity || !targetEntity) return [];
+
+    let entityWithFK = null;
+    let referencedEntity = null;
+
+    switch (relationType) {
+      case 'belongsTo':
+        entityWithFK = sourceEntity;
+        referencedEntity = targetEntity;
+        break;
+      case 'hasOne':
+      case 'hasMany':
+        entityWithFK = targetEntity;
+        referencedEntity = sourceEntity;
+        break;
+      default:
+        return [];
+    }
+
+    // Parse fields
+    let fields = [];
+    try {
+      fields = JSON.parse(entityWithFK.fields || '[]');
+    } catch (e) {
+      fields = [];
+    }
+
+    // Filter for int/int64 fields or suggest new field
+    const intFields = fields
+      .filter(f => f.type === 'int' || f.type === 'int64')
+      .map(f => ({
+        value: toSnakeCase(f.name),
+        label: toSnakeCase(f.name),
+        type: f.type,
+        isExisting: true,
+        description: `Existing ${f.type} field (will be BIGINT FK)`
+      }));
+
+    // Add suggested new field
+    const suggestedName = `${toSnakeCase(referencedEntity.name)}_id`;
+    const suggestedField = {
+      value: suggestedName,
+      label: suggestedName,
+      type: 'bigint',
+      isExisting: false,
+      description: 'New FK field (recommended)'
+    };
+
+    // Check if suggested name already exists
+    const existingSuggested = intFields.find(f => f.value === suggestedName);
+    if (existingSuggested) {
+      // Mark existing field as recommended
+      existingSuggested.description = 'Existing field (recommended, will be FK)';
+      return intFields;
+    }
+
+    return [suggestedField, ...intFields];
+  };
+
+  // Update available fields when relation type or entities change
+  useEffect(() => {
+    const fields = getAvailableFields(formData.relation_type);
+    setAvailableFields(fields);
+    
+    // Auto-select first field (recommended)
+    if (fields.length > 0 && !formData.field_name) {
+      setFormData(prev => ({
+        ...prev,
+        field_name: fields[0].value
+      }));
+    }
+  }, [formData.relation_type, sourceEntity, targetEntity]);
 
   // Initialize form data when entities are provided
   useEffect(() => {
@@ -277,26 +353,60 @@ export default function RelationModal({ isOpen, onClose, onSubmit, sourceEntity,
             {formData.relation_type !== 'manyToMany' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Field Name *
+                  Foreign Key Field *
+                  <span className="text-xs font-normal text-gray-500 ml-2">
+                    (Select existing int/int64 field or use suggested)
+                  </span>
                 </label>
-                <input
-                  type="text"
+                <select
                   name="field_name"
                   value={formData.field_name}
                   onChange={handleChange}
-                  placeholder="e.g., user_id"
                   className={`
                     w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent
                     ${errors.field_name ? 'border-red-500' : 'border-gray-300'}
                   `}
-                />
-                {selectedRelationType && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    {formData.relation_type === 'belongsTo' && 'Foreign key column in source table'}
-                    {formData.relation_type === 'hasOne' && 'Foreign key column in target table'}
-                    {formData.relation_type === 'hasMany' && 'Foreign key column in target tables'}
-                  </p>
+                >
+                  <option value="">-- Select FK field --</option>
+                  {availableFields.map(field => (
+                    <option key={field.value} value={field.value}>
+                      {field.label} {field.isExisting ? '(existing)' : '(new)'}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Show description of selected field */}
+                {formData.field_name && availableFields.length > 0 && (
+                  <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-xs text-blue-800">
+                      {availableFields.find(f => f.value === formData.field_name)?.description}
+                    </p>
+                    <p className="text-xs text-blue-600 mt-1">
+                      {formData.relation_type === 'belongsTo' && `Column will be in ${sourceEntity?.name} table (source)`}
+                      {(formData.relation_type === 'hasOne' || formData.relation_type === 'hasMany') && 
+                        `Column will be in ${targetEntity?.name} table (target)`}
+                    </p>
+                  </div>
                 )}
+
+                {/* Option to add custom field name */}
+                <details className="mt-2">
+                  <summary className="text-xs text-gray-600 cursor-pointer hover:text-gray-800">
+                    Or enter custom field name
+                  </summary>
+                  <input
+                    type="text"
+                    placeholder="e.g., author_id, owner_id, parent_id"
+                    value={formData.field_name}
+                    onChange={handleChange}
+                    name="field_name"
+                    className="mt-2 w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Custom names allowed. Will be created as BIGINT NOT NULL.
+                  </p>
+                </details>
+
                 {errors.field_name && (
                   <p className="text-red-500 text-sm mt-1">{errors.field_name}</p>
                 )}
