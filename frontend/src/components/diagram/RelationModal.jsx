@@ -91,36 +91,37 @@ export default function RelationModal({ isOpen, onClose, onSubmit, sourceEntity,
       fields = [];
     }
 
-    // Filter for int/int64 fields or suggest new field
-    const intFields = fields
-      .filter(f => f.type === 'int' || f.type === 'int64')
-      .map(f => ({
-        value: toSnakeCase(f.name),
-        label: toSnakeCase(f.name),
-        type: f.type,
-        isExisting: true,
-        description: `Existing ${f.type} field (will be BIGINT FK)`
-      }));
+    // Map all existing fields
+    const existingFields = fields.map(f => ({
+      value: toSnakeCase(f.name),
+      label: `${toSnakeCase(f.name)} (${f.type})`,
+      type: f.type,
+      isExisting: true,
+      isRecommended: f.type === 'int' || f.type === 'int64',
+      description: f.type === 'int' || f.type === 'int64' 
+        ? `Existing ${f.type} field - Good for FK` 
+        : `Existing ${f.type} field - Type will be changed to BIGINT`
+    }));
 
-    // Add suggested new field
+    // Add suggested new field at the top
     const suggestedName = `${toSnakeCase(referencedEntity.name)}_id`;
-    const suggestedField = {
-      value: suggestedName,
-      label: suggestedName,
-      type: 'bigint',
-      isExisting: false,
-      description: 'New FK field (recommended)'
-    };
-
+    
     // Check if suggested name already exists
-    const existingSuggested = intFields.find(f => f.value === suggestedName);
-    if (existingSuggested) {
-      // Mark existing field as recommended
-      existingSuggested.description = 'Existing field (recommended, will be FK)';
-      return intFields;
+    const existingSuggested = existingFields.find(f => toSnakeCase(f.value) === suggestedName);
+    
+    if (!existingSuggested) {
+      // Add as new field option
+      existingFields.unshift({
+        value: suggestedName,
+        label: `${suggestedName} (new)`,
+        type: 'bigint',
+        isExisting: false,
+        isRecommended: true,
+        description: 'New FK field (recommended - will be created)'
+      });
     }
 
-    return [suggestedField, ...intFields];
+    return existingFields;
   };
 
   // Update available fields when relation type or entities change
@@ -355,7 +356,7 @@ export default function RelationModal({ isOpen, onClose, onSubmit, sourceEntity,
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Foreign Key Field *
                   <span className="text-xs font-normal text-gray-500 ml-2">
-                    (Select existing int/int64 field or use suggested)
+                    (Select existing field or create new)
                   </span>
                 </label>
                 <select
@@ -370,41 +371,61 @@ export default function RelationModal({ isOpen, onClose, onSubmit, sourceEntity,
                   <option value="">-- Select FK field --</option>
                   {availableFields.map(field => (
                     <option key={field.value} value={field.value}>
-                      {field.label} {field.isExisting ? '(existing)' : '(new)'}
+                      {field.label}
                     </option>
                   ))}
                 </select>
 
                 {/* Show description of selected field */}
                 {formData.field_name && availableFields.length > 0 && (
-                  <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                    <p className="text-xs text-blue-800">
-                      {availableFields.find(f => f.value === formData.field_name)?.description}
-                    </p>
-                    <p className="text-xs text-blue-600 mt-1">
-                      {formData.relation_type === 'belongsTo' && `Column will be in ${sourceEntity?.name} table (source)`}
-                      {(formData.relation_type === 'hasOne' || formData.relation_type === 'hasMany') && 
-                        `Column will be in ${targetEntity?.name} table (target)`}
-                    </p>
-                  </div>
+                  (() => {
+                    const selectedField = availableFields.find(f => f.value === formData.field_name);
+                    if (!selectedField) return null;
+
+                    return (
+                      <div className={`mt-2 p-3 rounded-lg border ${
+                        selectedField.isRecommended 
+                          ? 'bg-green-50 border-green-200' 
+                          : 'bg-yellow-50 border-yellow-200'
+                      }`}>
+                        <p className={`text-xs font-medium ${
+                          selectedField.isRecommended ? 'text-green-800' : 'text-yellow-800'
+                        }`}>
+                          {selectedField.description}
+                        </p>
+                        <p className="text-xs text-gray-600 mt-1">
+                          {formData.relation_type === 'belongsTo' && 
+                            `Column "${formData.field_name}" will be in ${sourceEntity?.name} table (source)`}
+                          {(formData.relation_type === 'hasOne' || formData.relation_type === 'hasMany') && 
+                            `Column "${formData.field_name}" will be in ${targetEntity?.name} table (target)`}
+                        </p>
+                        <p className="text-xs text-gray-600">
+                          Final type: <span className="font-mono font-semibold">BIGINT NOT NULL</span>
+                        </p>
+                      </div>
+                    );
+                  })()
                 )}
 
                 {/* Option to add custom field name */}
-                <details className="mt-2">
-                  <summary className="text-xs text-gray-600 cursor-pointer hover:text-gray-800">
-                    Or enter custom field name
+                <details className="mt-3">
+                  <summary className="text-xs text-blue-600 cursor-pointer hover:text-blue-800 font-medium">
+                    ⚙️ Advanced: Enter custom field name
                   </summary>
-                  <input
-                    type="text"
-                    placeholder="e.g., author_id, owner_id, parent_id"
-                    value={formData.field_name}
-                    onChange={handleChange}
-                    name="field_name"
-                    className="mt-2 w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Custom names allowed. Will be created as BIGINT NOT NULL.
-                  </p>
+                  <div className="mt-2 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                    <input
+                      type="text"
+                      placeholder="e.g., author_id, owner_id, parent_id"
+                      value={formData.field_name}
+                      onChange={handleChange}
+                      name="field_name"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                    <p className="text-xs text-gray-500 mt-2">
+                      💡 Use this if you want a completely custom field name that doesn't exist yet.
+                      Field will be created as <span className="font-mono">BIGINT NOT NULL</span>.
+                    </p>
+                  </div>
                 </details>
 
                 {errors.field_name && (

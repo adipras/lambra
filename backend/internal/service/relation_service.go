@@ -282,27 +282,25 @@ func (s *RelationService) validateFieldName(sourceEntity, targetEntity *models.E
 	for _, field := range fields {
 		existingFieldName := toSnakeCase(field.Name)
 		if existingFieldName == fieldNameSnake {
-			// Check if it's already a FK field (int/int64 type ending with _id)
-			if field.Type == "int" || field.Type == "int64" {
-				// This is OK - user explicitly created FK field
-				// But we should warn that it will be overridden
-				continue
+			// Field exists - check type compatibility
+			// int/int64 types can be converted to BIGINT (OK)
+			// Other types will be overridden (WARN but allow)
+			if field.Type != "int" && field.Type != "int64" {
+				// Log warning but allow
+				fmt.Printf("WARNING: Field '%s' in %s entity (%s) has type %s but will be converted to BIGINT for FK\n", 
+					fieldName, entityName, entityWithFK.Name, field.Type)
 			}
-			return fmt.Errorf("field name '%s' conflicts with existing field in %s entity (%s). FK field will be type BIGINT but existing field is type %s", 
-				fieldName, entityName, entityWithFK.Name, field.Type)
+			// Allow - field will be overridden in migration
+			return nil
 		}
 	}
 	
-	// Validate field name format (should be snake_case and end with _id or _uuid is bad practice)
-	if len(fieldName) < 3 {
-		return errors.New("field name too short (minimum 3 characters)")
+	// Field doesn't exist - will be created as new field
+	// Validate field name format
+	if len(fieldName) < 2 {
+		return errors.New("field name too short (minimum 2 characters)")
 	}
 	
-	// Recommend _id suffix
-	if !strings.HasSuffix(fieldName, "_id") {
-		// Not an error, just note - user can use custom names
-		// e.g., "author_id", "owner_id", "parent_id" are all valid
-	}
-	
+	// All good - new field will be created
 	return nil
 }
