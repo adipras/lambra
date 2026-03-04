@@ -61,7 +61,8 @@ internal/
 ├── generator/       # Code generation engine
 ├── models/          # Data models
 ├── repository/      # Database access layer
-└── service/         # Business logic
+├── service/         # Business logic
+└── utils/           # Shared utilities (strings, etc.)
 ```
 
 ### Dual Identifier Strategy
@@ -177,5 +178,15 @@ Phase 2.2 (Entity & Endpoint Management) is complete. Phase 2.3 (GitLab Integrat
 - Implement GitLab API client in `internal/generator/git_client.go`
 - Add workspace manager for file generation
 - Connect generate endpoint to push code to GitLab
+
+### Recent Updates (March 2026)
+- ✅ **Bug Fixes**: Fixed Relations feature bugs
+  - Created `internal/utils/strings.go` with shared utility functions
+  - Fixed `toSnakeCase()` and `pluralize()` function access
+  - Fixed frontend API response handling in DatabaseDiagram.jsx
+- ✅ **Documentation Cleanup**: Updated and organized all project documentation
+  - Updated README.md with Visual Relations feature
+  - Created DOCS_INDEX.md for documentation navigation
+  - Updated PROGRESS.md with quick summary
 
 See `PROGRESS.md` for detailed roadmap and completion status.

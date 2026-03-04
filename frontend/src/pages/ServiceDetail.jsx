@@ -30,16 +30,28 @@ import { SnapshotList } from '../components/deployment/SnapshotList'
 import LogsModal from '../components/logs/LogsModal'
 import DeploymentHistory from '../components/logs/DeploymentHistory'
 import DatabaseDiagram from '../components/diagram/DatabaseDiagram'
+import { useDiagramStore } from '../stores/useDiagramStore'
 
 export const ServiceDetail = () => {
   const { id } = useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
-  const [showEntityModal, setShowEntityModal] = useState(false)
-  const [showEndpointModal, setShowEndpointModal] = useState(false)
+  // Zustand store for UI state
+  const {
+    viewMode,
+    setViewMode,
+    showEntityModal,
+    showEndpointModal,
+    selectedEntity,
+    openEntityModal,
+    closeEntityModal,
+    closeEndpointModal,
+    openEndpointModal,
+  } = useDiagramStore()
+
+  // Local state for things not in store
   const [showPreviewModal, setShowPreviewModal] = useState(false)
-  const [selectedEntity, setSelectedEntity] = useState(null)
   const [previewEntity, setPreviewEntity] = useState(null)
   const [notification, setNotification] = useState(null)
 
@@ -84,7 +96,7 @@ export const ServiceDetail = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries(['entities', id])
-      setShowEntityModal(false)
+      closeEntityModal()
       showNotification('success', 'Entity created successfully!')
     },
     onError: (error, newEntity, context) => {
@@ -99,8 +111,7 @@ export const ServiceDetail = () => {
     mutationFn: (data) => endpointsApi.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries(['entity-endpoints'])
-      setShowEndpointModal(false)
-      setSelectedEntity(null)
+      closeEndpointModal()
       showNotification('success', 'Endpoint created successfully!')
     },
   })
@@ -294,7 +305,6 @@ export const ServiceDetail = () => {
   const [showDeployProgress, setShowDeployProgress] = useState(false)
   const [currentDeploymentId, setCurrentDeploymentId] = useState(null)
   const [entityToDelete, setEntityToDelete] = useState(null)
-  const [viewMode, setViewMode] = useState('list') // 'list' or 'diagram'
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -695,17 +705,20 @@ export const ServiceDetail = () => {
               </button>
             </div>
 
-            <button
-              onClick={() => setShowEntityModal(true)}
-              className="btn btn-primary"
-            >
-              <Plus className="w-4 h-4 mr-1.5" />
-              Add Entity
-            </button>
+            {/* Add Entity button - only show in List View mode */}
+            {viewMode === 'list' && (
+              <button
+                onClick={openEntityModal}
+                className="btn btn-primary"
+              >
+                <Plus className="w-4 h-4 mr-1.5" />
+                Add Entity
+              </button>
+            )}
           </div>
         </div>
 
-        <div className={viewMode === 'diagram' ? 'h-[600px]' : 'p-5'}>
+        <div className={viewMode === 'diagram' ? 'h-[calc(100vh-320px)] min-h-[500px]' : 'p-5'}>
           {entitiesLoading ? (
             <div className="space-y-4 p-5">
               <EntityCardSkeleton />
@@ -719,7 +732,7 @@ export const ServiceDetail = () => {
               <h3 className="text-lg font-medium text-gray-900 mb-1">No entities yet</h3>
               <p className="text-gray-500 mb-6">Create your first entity to define your data model</p>
               <button
-                onClick={() => setShowEntityModal(true)}
+                onClick={openEntityModal}
                 className="btn btn-primary"
               >
                 <Plus className="w-4 h-4 mr-1.5" />
@@ -742,10 +755,7 @@ export const ServiceDetail = () => {
                   key={entity.id}
                   entity={entity}
                   serviceUrl={deploymentStatus?.url}
-                  onAddEndpoint={() => {
-                    setSelectedEntity(entity)
-                    setShowEndpointModal(true)
-                  }}
+                  onAddEndpoint={() => openEndpointModal(entity)}
                   onDelete={() => handleDeleteEntity(entity)}
                   onDeleteEndpoint={handleDeleteEndpoint}
                   onPreview={() => handlePreview(entity)}
@@ -775,14 +785,14 @@ export const ServiceDetail = () => {
                 <h2 className="text-xl font-bold text-gray-900">Create New Entity</h2>
                 <p className="text-sm text-gray-500">Define your data model with fields and auto-generated endpoints</p>
               </div>
-              <button onClick={() => setShowEntityModal(false)} className="p-2 hover:bg-gray-100 rounded-lg">
+              <button onClick={closeEntityModal} className="p-2 hover:bg-gray-100 rounded-lg">
                 <X className="w-5 h-5" />
               </button>
             </div>
             <div className="p-6">
               <EntityForm
                 onSubmit={(data) => createEntityMutation.mutate(data)}
-                onCancel={() => setShowEntityModal(false)}
+                onCancel={closeEntityModal}
                 isLoading={createEntityMutation.isPending}
                 projectId={id}
               />
@@ -800,7 +810,7 @@ export const ServiceDetail = () => {
                 <h2 className="text-xl font-bold text-gray-900">Create Endpoint</h2>
                 <p className="text-sm text-gray-500">for entity: <span className="font-medium text-indigo-600">{selectedEntity.name}</span></p>
               </div>
-              <button onClick={() => { setShowEndpointModal(false); setSelectedEntity(null) }} className="p-2 hover:bg-gray-100 rounded-lg">
+              <button onClick={closeEndpointModal} className="p-2 hover:bg-gray-100 rounded-lg">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -808,10 +818,7 @@ export const ServiceDetail = () => {
               <EndpointForm
                 entityId={selectedEntity.id}
                 onSubmit={(data) => createEndpointMutation.mutate(data)}
-                onCancel={() => {
-                  setShowEndpointModal(false)
-                  setSelectedEntity(null)
-                }}
+                onCancel={closeEndpointModal}
                 isLoading={createEndpointMutation.isPending}
               />
             </div>
@@ -891,7 +898,7 @@ const EntityCard = ({ entity, onAddEndpoint, onDelete, onDeleteEndpoint, onPrevi
 
   const isOptimistic = entity._isOptimistic
 
-  const { data: endpointsData, isLoading: endpointsLoading } = useQuery({
+  const { data: endpointsData } = useQuery({
     queryKey: ['entity-endpoints', entity.id],
     queryFn: () => endpointsApi.getByEntity(entity.id),
     enabled: !isOptimistic, // Don't fetch endpoints for optimistic entities

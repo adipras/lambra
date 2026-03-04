@@ -12,9 +12,10 @@ import 'reactflow/dist/style.css'
 import EntityNode from './EntityNode'
 import RelationEdge from './RelationEdge'
 import RelationModal from './RelationModal'
-import { LayoutGrid, Save, Download, Info } from 'lucide-react'
+import { LayoutGrid, Save, Download, Info, Plus } from 'lucide-react'
 import { createRelation, getRelationsByEntity, deleteRelation } from '../../api/relations'
 import { useQueryClient } from '@tanstack/react-query'
+import { useDiagramStore } from '../../stores/useDiagramStore'
 
 const nodeTypes = {
   entity: EntityNode,
@@ -47,6 +48,9 @@ const getLayoutedElements = (nodes, edges) => {
 }
 
 const DatabaseDiagram = ({ entities = [], onSave, projectId }) => {
+  // Zustand store
+  const openEntityModal = useDiagramStore((state) => state.openEntityModal)
+
   const [selectedField, setSelectedField] = useState(null)
   const [isRelationModalOpen, setIsRelationModalOpen] = useState(false)
   const [pendingConnection, setPendingConnection] = useState(null)
@@ -206,13 +210,13 @@ const DatabaseDiagram = ({ entities = [], onSave, projectId }) => {
   const handleRelationSubmit = async (formData) => {
     try {
       await createRelation(formData)
-      
+
       // Refetch relations
       const allRelations = []
       for (const entity of entities) {
         const response = await getRelationsByEntity(entity.id)
-        if (response && response.relations) {
-          allRelations.push(...response.relations)
+        if (response.data && response.data.relations) {
+          allRelations.push(...response.data.relations)
         }
       }
       setRelations(allRelations)
@@ -286,32 +290,44 @@ const DatabaseDiagram = ({ entities = [], onSave, projectId }) => {
         />
 
         {/* Custom Controls */}
-        <Panel position="top-right" className="bg-white rounded-lg shadow-lg p-2 space-y-2">
-          <button
-            onClick={onLayout}
-            className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md transition-colors w-full"
-            title="Auto-layout diagram"
-          >
-            <LayoutGrid className="w-4 h-4" />
-            Auto Layout
-          </button>
+        <Panel position="top-right" className="space-y-2">
+          <div className="bg-white rounded-lg shadow-lg p-2 space-y-2">
+            <button
+              onClick={onLayout}
+              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md transition-colors w-full"
+              title="Auto-layout diagram"
+            >
+              <LayoutGrid className="w-4 h-4" />
+              Auto Layout
+            </button>
 
-          <button
-            onClick={onSavePositions}
-            className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md transition-colors w-full"
-            title="Save positions"
-          >
-            <Save className="w-4 h-4" />
-            Save Layout
-          </button>
+            <button
+              onClick={onSavePositions}
+              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md transition-colors w-full"
+              title="Save positions"
+            >
+              <Save className="w-4 h-4" />
+              Save Layout
+            </button>
 
+            <button
+              onClick={onExportImage}
+              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md transition-colors w-full"
+              title="Export as image"
+            >
+              <Download className="w-4 h-4" />
+              Export Image
+            </button>
+          </div>
+
+          {/* Add Entity Button - FAB Style */}
           <button
-            onClick={onExportImage}
-            className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-md transition-colors w-full"
-            title="Export as image"
+            onClick={openEntityModal}
+            className="flex items-center gap-2 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-lg text-sm font-medium transition-colors w-full"
+            title="Create new entity"
           >
-            <Download className="w-4 h-4" />
-            Export Image
+            <Plus className="w-4 h-4" />
+            Add Entity
           </button>
         </Panel>
 

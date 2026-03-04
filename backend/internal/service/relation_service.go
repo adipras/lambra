@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/yourusername/lambra/internal/models"
 	"github.com/yourusername/lambra/internal/repository"
+	"github.com/yourusername/lambra/internal/utils"
 )
 
 type RelationService struct {
@@ -102,13 +102,13 @@ func (s *RelationService) CreateRelation(sourceEntityUUID, targetEntityUUID, fie
 // generateFieldName generates a foreign key field name
 func (s *RelationService) generateFieldName(targetEntityName, relationType string) string {
 	// Convert to snake_case and add _id
-	fieldName := toSnakeCase(targetEntityName)
-	
+	fieldName := utils.ToSnakeCase(targetEntityName)
+
 	// For belongsTo, the source has the FK
 	if relationType == "belongsTo" {
 		return fieldName + "_id"
 	}
-	
+
 	// For hasOne/hasMany, target has FK to source (no field on source)
 	// But we still need to store the field name for code generation
 	return fieldName + "_id"
@@ -117,9 +117,9 @@ func (s *RelationService) generateFieldName(targetEntityName, relationType strin
 // generateJunctionTableName generates a junction table name for manyToMany
 func (s *RelationService) generateJunctionTableName(source, target string) string {
 	// Convert both to snake_case
-	sourceName := toSnakeCase(pluralize(source))
-	targetName := toSnakeCase(pluralize(target))
-	
+	sourceName := utils.ToSnakeCase(utils.Pluralize(source))
+	targetName := utils.ToSnakeCase(utils.Pluralize(target))
+
 	// Sort alphabetically for consistency
 	if sourceName < targetName {
 		return sourceName + "_" + targetName
@@ -255,7 +255,7 @@ func (s *RelationService) validateFieldName(sourceEntity, targetEntity *models.E
 	// Determine which entity will have the FK column
 	var entityWithFK *models.Entity
 	var entityName string
-	
+
 	switch relationType {
 	case "belongsTo":
 		// FK in source entity
@@ -268,39 +268,39 @@ func (s *RelationService) validateFieldName(sourceEntity, targetEntity *models.E
 	default:
 		return nil // No validation needed for manyToMany
 	}
-	
+
 	// Parse entity fields
 	var fields []models.EntityField
 	if err := json.Unmarshal(entityWithFK.Fields, &fields); err != nil {
 		return fmt.Errorf("failed to parse entity fields: %w", err)
 	}
-	
+
 	// Convert field name to snake_case for comparison
-	fieldNameSnake := toSnakeCase(fieldName)
-	
+	fieldNameSnake := utils.ToSnakeCase(fieldName)
+
 	// Check if field name conflicts with existing fields
 	for _, field := range fields {
-		existingFieldName := toSnakeCase(field.Name)
+		existingFieldName := utils.ToSnakeCase(field.Name)
 		if existingFieldName == fieldNameSnake {
 			// Field exists - check type compatibility
 			// int/int64 types can be converted to BIGINT (OK)
 			// Other types will be overridden (WARN but allow)
 			if field.Type != "int" && field.Type != "int64" {
 				// Log warning but allow
-				fmt.Printf("WARNING: Field '%s' in %s entity (%s) has type %s but will be converted to BIGINT for FK\n", 
+				fmt.Printf("WARNING: Field '%s' in %s entity (%s) has type %s but will be converted to BIGINT for FK\n",
 					fieldName, entityName, entityWithFK.Name, field.Type)
 			}
 			// Allow - field will be overridden in migration
 			return nil
 		}
 	}
-	
+
 	// Field doesn't exist - will be created as new field
 	// Validate field name format
 	if len(fieldName) < 2 {
 		return errors.New("field name too short (minimum 2 characters)")
 	}
-	
+
 	// All good - new field will be created
 	return nil
 }
