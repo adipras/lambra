@@ -14,12 +14,14 @@ import (
 type RelationService struct {
 	relationRepo *repository.RelationRepository
 	entityRepo   *repository.EntityRepository
+	projectRepo  *repository.ProjectRepository
 }
 
-func NewRelationService(relationRepo *repository.RelationRepository, entityRepo *repository.EntityRepository) *RelationService {
+func NewRelationService(relationRepo *repository.RelationRepository, entityRepo *repository.EntityRepository, projectRepo *repository.ProjectRepository) *RelationService {
 	return &RelationService{
 		relationRepo: relationRepo,
 		entityRepo:   entityRepo,
+		projectRepo:  projectRepo,
 	}
 }
 
@@ -174,13 +176,11 @@ func (s *RelationService) GetEntityRelations(entityUUID string) ([]models.Relati
 
 // GetProjectRelations retrieves all relations for a project
 func (s *RelationService) GetProjectRelations(projectUUID string) ([]models.Relation, error) {
-	// Get project to get ID
-	// Note: We need ProjectRepository for this
-	// For now, we'll get entities first and then relations
-	
-	// This is a placeholder - you may want to add a project_id to relations table
-	// or fetch via entities
-	return nil, errors.New("not implemented yet")
+	project, err := s.projectRepo.GetByUUID(projectUUID)
+	if err != nil {
+		return nil, fmt.Errorf("project not found: %w", err)
+	}
+	return s.relationRepo.GetByProject(project.ID)
 }
 
 // UpdateRelation updates a relation

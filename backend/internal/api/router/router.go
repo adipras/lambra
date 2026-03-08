@@ -37,7 +37,7 @@ func Setup(db *sqlx.DB) *gin.Engine {
 	projectService := service.NewProjectService(projectRepo)
 	entityService := service.NewEntityService(entityRepo, projectRepo, endpointRepo, relationRepo)
 	endpointService := service.NewEndpointService(endpointRepo, entityRepo, projectRepo)
-	relationService := service.NewRelationService(relationRepo, entityRepo)
+	relationService := service.NewRelationService(relationRepo, entityRepo, projectRepo)
 	generatorService := service.NewGeneratorService(projectRepo, entityRepo, endpointRepo, relationRepo)
 	deploymentService := service.NewDeploymentService(projectRepo, entityRepo, endpointRepo, relationRepo, snapshotRepo, deploymentRepo, deploymentLogRepo, generatorService, workspacePath)
 	exportService := service.NewExportService(projectRepo, entityRepo, endpointRepo)
@@ -74,6 +74,9 @@ func Setup(db *sqlx.DB) *gin.Engine {
 			projects.POST("/:id/entities", entityHandler.CreateEntity)
 			projects.GET("/:id/entities", entityHandler.GetEntitiesByProject)
 			projects.GET("/:id/endpoints", endpointHandler.GetEndpointsByProject)
+
+			// Relations
+			projects.GET("/:id/relations", relationHandler.GetProjectRelations)
 
 			// Deployment routes
 			projects.POST("/:id/deploy", deploymentHandler.DeployProject)

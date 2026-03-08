@@ -13,7 +13,7 @@ import EntityNode from './EntityNode'
 import RelationEdge from './RelationEdge'
 import RelationModal from './RelationModal'
 import { LayoutGrid, Save, Download, Info, Plus } from 'lucide-react'
-import { createRelation, getRelationsByEntity, deleteRelation } from '../../api/relations'
+import { createRelation, getRelationsByProject, deleteRelation } from '../../api/relations'
 import { useQueryClient } from '@tanstack/react-query'
 import { useDiagramStore } from '../../stores/useDiagramStore'
 
@@ -57,27 +57,23 @@ const DatabaseDiagram = ({ entities = [], onSave, projectId }) => {
   const [relations, setRelations] = useState([])
   const queryClient = useQueryClient()
 
-  // Fetch relations for all entities
+  // Fetch relations for the project (single call, no duplicates)
   useEffect(() => {
     const fetchAllRelations = async () => {
-      if (!entities || entities.length === 0) return
+      if (!projectId) return
       
       try {
-        const allRelations = []
-        for (const entity of entities) {
-          const response = await getRelationsByEntity(entity.id)
-          if (response.data && response.data.relations) {
-            allRelations.push(...response.data.relations)
-          }
+        const response = await getRelationsByProject(projectId)
+        if (response.data && response.data.relations) {
+          setRelations(response.data.relations)
         }
-        setRelations(allRelations)
       } catch (error) {
         console.error('Failed to fetch relations:', error)
       }
     }
     
     fetchAllRelations()
-  }, [entities])
+  }, [projectId])
 
   // Handle delete relation
   const handleDeleteRelation = useCallback(async (relationId) => {
@@ -85,23 +81,18 @@ const DatabaseDiagram = ({ entities = [], onSave, projectId }) => {
       await deleteRelation(relationId)
       
       // Refetch relations
-      const allRelations = []
-      for (const entity of entities) {
-        const response = await getRelationsByEntity(entity.id)
-        if (response.data && response.data.relations) {
-          allRelations.push(...response.data.relations)
-        }
+      const response = await getRelationsByProject(projectId)
+      if (response.data && response.data.relations) {
+        setRelations(response.data.relations)
       }
-      setRelations(allRelations)
       
-      // Invalidate queries
       queryClient.invalidateQueries(['entities'])
       queryClient.invalidateQueries(['project'])
     } catch (error) {
       console.error('Failed to delete relation:', error)
       alert('Failed to delete relation: ' + (error.response?.data?.error || error.message))
     }
-  }, [entities, queryClient])
+  }, [projectId, queryClient])
 
   // Convert entities to nodes
   const initialNodes = useMemo(() => {
@@ -212,14 +203,10 @@ const DatabaseDiagram = ({ entities = [], onSave, projectId }) => {
       await createRelation(formData)
 
       // Refetch relations
-      const allRelations = []
-      for (const entity of entities) {
-        const response = await getRelationsByEntity(entity.id)
-        if (response.data && response.data.relations) {
-          allRelations.push(...response.data.relations)
-        }
+      const refetchResponse = await getRelationsByProject(projectId)
+      if (refetchResponse.data && refetchResponse.data.relations) {
+        setRelations(refetchResponse.data.relations)
       }
-      setRelations(allRelations)
       
       // Invalidate queries to refresh entity list if needed
       queryClient.invalidateQueries(['entities'])

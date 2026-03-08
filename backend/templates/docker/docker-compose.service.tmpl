@@ -15,7 +15,6 @@ services:
       - "{{.DatabasePort}}:3306"
     volumes:
       - {{.ServiceName}}_db_data:/var/lib/mysql
-      - ./migrations:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s

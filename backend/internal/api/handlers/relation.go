@@ -132,6 +132,21 @@ func (h *RelationHandler) UpdateRelation(c *gin.Context) {
 	response.Success(c, relation, "")
 }
 
+// GetProjectRelations handles GET /api/v1/projects/:id/relations
+func (h *RelationHandler) GetProjectRelations(c *gin.Context) {
+	projectID := c.Param("id")
+
+	relations, err := h.relationService.GetProjectRelations(projectID)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed", err)
+		return
+	}
+
+	response.Success(c, gin.H{
+		"relations": relations,
+	}, "")
+}
+
 // DeleteRelation handles DELETE /api/v1/relations/:id
 func (h *RelationHandler) DeleteRelation(c *gin.Context) {
 	id := c.Param("id")
