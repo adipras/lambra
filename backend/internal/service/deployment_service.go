@@ -16,6 +16,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/yourusername/lambra/internal/models"
 	"github.com/yourusername/lambra/internal/repository"
+	"github.com/yourusername/lambra/pkg/authctx"
 )
 
 // DeploymentService handles service deployment operations
@@ -108,7 +109,12 @@ func (s *DeploymentService) DeployProject(ctx context.Context, projectUUID strin
 		Version:     fmt.Sprintf("v%d", time.Now().Unix()),
 		StartedAt:   time.Now(),
 	}
-	deployment.CreatedBy = sql.NullString{String: "system", Valid: true}
+	// Attribute deployment to the authenticated user (fallback: system)
+	deployedBy := authctx.Username(ctx)
+	if deployedBy == "" {
+		deployedBy = "system"
+	}
+	deployment.CreatedBy = sql.NullString{String: deployedBy, Valid: true}
 
 	if err := s.deploymentRepo.Create(deployment); err != nil {
 		return nil, fmt.Errorf("failed to create deployment record: %w", err)

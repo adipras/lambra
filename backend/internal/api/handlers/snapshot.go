@@ -4,9 +4,18 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/yourusername/lambra/internal/api/middleware"
 	"github.com/yourusername/lambra/internal/service"
 	"github.com/yourusername/lambra/pkg/response"
 )
+
+// currentUser returns the authenticated username, or "system" if absent
+func currentUser(c *gin.Context) string {
+	if user := middleware.CurrentUser(c); user != nil {
+		return user.Username
+	}
+	return "system"
+}
 
 type SnapshotHandler struct {
 	snapshotService   *service.SnapshotService
@@ -76,8 +85,8 @@ func (h *SnapshotHandler) Create(c *gin.Context) {
 		return
 	}
 
-	// Get created_by from request or default to "system"
-	createdBy := c.DefaultQuery("created_by", "system")
+	// Attribute to the authenticated user (fallback: system)
+	createdBy := c.DefaultQuery("created_by", currentUser(c))
 
 	snapshot, err := h.snapshotService.CreateSnapshot(projectUUID, createdBy)
 	if err != nil {
@@ -96,7 +105,7 @@ func (h *SnapshotHandler) Rollback(c *gin.Context) {
 		return
 	}
 
-	rolledBackBy := c.DefaultQuery("rolled_back_by", "system")
+	rolledBackBy := c.DefaultQuery("rolled_back_by", currentUser(c))
 
 	// Rollback to snapshot (restore entities and endpoints)
 	projectUUID, err := h.snapshotService.RollbackToSnapshot(snapshotUUID, rolledBackBy)
@@ -129,7 +138,7 @@ func (h *SnapshotHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	deletedBy := c.DefaultQuery("deleted_by", "system")
+	deletedBy := c.DefaultQuery("deleted_by", currentUser(c))
 
 	err := h.snapshotService.DeleteSnapshot(snapshotUUID, deletedBy)
 	if err != nil {

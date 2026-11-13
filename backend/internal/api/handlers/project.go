@@ -24,7 +24,7 @@ func (h *ProjectHandler) CreateProject(c *gin.Context) {
 		return
 	}
 
-	project, err := h.service.CreateProject(&req)
+	project, err := h.service.CreateProject(c.Request.Context(), &req)
 	if err != nil {
 		response.InternalError(c, "Failed to create project", err)
 		return

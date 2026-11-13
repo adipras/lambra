@@ -32,6 +32,7 @@ func Setup(db *sqlx.DB) *gin.Engine {
 	snapshotRepo := repository.NewSnapshotRepository(db)
 	deploymentRepo := repository.NewDeploymentRepository(db)
 	deploymentLogRepo := repository.NewDeploymentLogRepository(db)
+	userRepo := repository.NewUserRepository(db)
 
 	// Initialize services
 	projectService := service.NewProjectService(projectRepo)
@@ -42,6 +43,7 @@ func Setup(db *sqlx.DB) *gin.Engine {
 	deploymentService := service.NewDeploymentService(projectRepo, entityRepo, endpointRepo, relationRepo, snapshotRepo, deploymentRepo, deploymentLogRepo, generatorService, workspacePath)
 	exportService := service.NewExportService(projectRepo, entityRepo, endpointRepo)
 	snapshotService := service.NewSnapshotService(snapshotRepo, projectRepo, entityRepo, endpointRepo, relationRepo)
+	authService := service.NewAuthService(userRepo, os.Getenv("JWT_SECRET"))
 
 	// Initialize handlers
 	healthHandler := handlers.NewHealthHandler(db)
@@ -53,6 +55,7 @@ func Setup(db *sqlx.DB) *gin.Engine {
 	deploymentHandler := handlers.NewDeploymentHandler(deploymentService)
 	exportHandler := handlers.NewExportHandler(exportService)
 	snapshotHandler := handlers.NewSnapshotHandler(snapshotService, deploymentService)
+	authHandler := handlers.NewAuthHandler(authService)
 
 	// Health check routes
 	router.GET("/health", healthHandler.HealthCheck)
@@ -61,6 +64,20 @@ func Setup(db *sqlx.DB) *gin.Engine {
 	// API v1 routes
 	v1 := router.Group("/api/v1")
 	{
+		// Auth routes (open)
+		auth := v1.Group("/auth")
+		{
+			auth.POST("/login", authHandler.Login)
+		}
+
+		// All other routes require authentication
+		v1.Use(middleware.Auth(authService.ValidateToken))
+
+		// /auth/me requires a token (registered after v1.Use)
+		authMe := v1.Group("/auth")
+		{
+			authMe.GET("/me", authHandler.Me)
+		}
 		// Projects
 		projects := v1.Group("/projects")
 		{

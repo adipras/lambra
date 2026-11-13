@@ -151,8 +151,7 @@ func (h *RelationHandler) GetProjectRelations(c *gin.Context) {
 func (h *RelationHandler) DeleteRelation(c *gin.Context) {
 	id := c.Param("id")
 
-	// TODO: Get actual user from auth context
-	deletedBy := "system"
+	deletedBy := currentUser(c)
 
 	err := h.relationService.DeleteRelation(id, deletedBy)
 	if err != nil {

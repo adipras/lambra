@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"regexp"
@@ -10,6 +11,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/yourusername/lambra/internal/models"
 	"github.com/yourusername/lambra/internal/repository"
+	"github.com/yourusername/lambra/pkg/authctx"
 )
 
 // SanitizeServiceName applies naming rules to a service name:
@@ -81,7 +83,7 @@ func (s *ProjectService) ValidateDBConnection(host string, port int, user, passw
 	return nil
 }
 
-func (s *ProjectService) CreateProject(req *models.CreateProjectRequest) (*models.Project, error) {
+func (s *ProjectService) CreateProject(ctx context.Context, req *models.CreateProjectRequest) (*models.Project, error) {
 	// Validate database connection first
 	if err := s.ValidateDBConnection(req.DBHost, req.DBPort, req.DBUser, req.DBPassword, req.DBName); err != nil {
 		return nil, fmt.Errorf("database connection failed: %w", err)
@@ -105,8 +107,12 @@ func (s *ProjectService) CreateProject(req *models.CreateProjectRequest) (*model
 		project.Description = sql.NullString{String: req.Description, Valid: true}
 	}
 
-	// Set created_by (in future, get from auth context)
-	project.SetCreatedBy("system")
+	// Set created_by from authenticated user (fallback: system)
+	createdBy := authctx.Username(ctx)
+	if createdBy == "" {
+		createdBy = "system"
+	}
+	project.SetCreatedBy(createdBy)
 
 	err := s.repo.Create(project)
 	if err != nil {

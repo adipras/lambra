@@ -38,6 +38,7 @@ services:
       DB_USER: lambra
       DB_PASSWORD: lambra_secret
       DB_NAME: lambra_db
+      JWT_SECRET: ${JWT_SECRET:-lambra-dev-secret-change-me}
       WORKSPACE_PATH: /workspace
     depends_on:
       mysql:
