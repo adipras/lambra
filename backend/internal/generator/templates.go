@@ -603,6 +603,8 @@ func (r Update{{ .EntityName }}Request) ToModel() *models.{{ .EntityName }} {
 		{{ .Name }}: func() float64 { if r.{{ .Name }} != nil { return *r.{{ .Name }} }; return 0 }(),
 {{- else if eq .GoType "bool" }}
 		{{ .Name }}: func() bool { if r.{{ .Name }} != nil { return *r.{{ .Name }} }; return false }(),
+{{- else if .Nullable }}
+		{{ .Name }}: func() {{ .GoType }} { if r.{{ .Name }} != nil { return *r.{{ .Name }} }; return nil }(),
 {{- else }}
 		{{ .Name }}: func() {{ .GoType }} { if r.{{ .Name }} != nil { return *r.{{ .Name }} }; return {{ .GoType }}{} }(),
 {{- end }}

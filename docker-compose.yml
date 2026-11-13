@@ -12,6 +12,7 @@ services:
       - "3307:3306"  # Use 3307 to avoid conflict with local MySQL
     volumes:
       - mysql_data:/var/lib/mysql
+      - ./docker/mysql-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot_password"]
       interval: 10s

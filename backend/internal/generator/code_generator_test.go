@@ -636,14 +636,79 @@ t.Errorf("Update DTO should not have 'required' validation: %s", line)
 }
 }
 
-t.Logf("Generated DTO:\n%s", code)
+	t.Logf("Generated DTO:\n%s", code)
+}
+
+func TestCodeGenerator_GenerateDTOWithNullableFields(t *testing.T) {
+	gen := NewCodeGenerator()
+
+	ctx := &GenerateContext{
+		EntityName:   "Product",
+		EntityNameLC: "product",
+		ModuleName:   "test-service",
+		TableName:    "products",
+		Fields: []FieldContext{
+			{
+				Name:              "Nama",
+				NameLC:            "nama",
+				Type:              "string",
+				GoType:            "string",
+				JSONTag:           `json:"nama"`,
+				ValidateTag:       `validate:"required"`,
+				ValidateTagUpdate: "",
+				Required:          true,
+			},
+			{
+				Name:              "Description",
+				NameLC:            "description",
+				Type:              "text",
+				GoType:            "*string",
+				JSONTag:           `json:"description,omitempty"`,
+				ValidateTag:       "",
+				ValidateTagUpdate: "",
+				Required:          false,
+				Nullable:          true,
+			},
+			{
+				Name:              "Price",
+				NameLC:            "price",
+				Type:              "integer",
+				GoType:            "*int64",
+				JSONTag:           `json:"price,omitempty"`,
+				ValidateTag:       "",
+				ValidateTagUpdate: "",
+				Required:          false,
+				Nullable:          true,
+			},
+		},
+	}
+
+	code, err := gen.GenerateDTO(ctx)
+	if err != nil {
+		t.Fatalf("GenerateDTO() error = %v", err)
+	}
+
+	// Nullable fields must return nil zero value, never a composite literal like *string{}
+	if strings.Contains(code, "string{}") || strings.Contains(code, "int64{}") {
+		t.Errorf("Generated DTO contains invalid composite literal for nullable type:\n%s", code)
+	}
+
+	if !strings.Contains(code, "func() *string { if r.Description != nil { return *r.Description }; return nil }()") {
+		t.Errorf("Generated DTO should return nil for nullable string:\n%s", code)
+	}
+
+	if !strings.Contains(code, "func() *int64 { if r.Price != nil { return *r.Price }; return nil }()") {
+		t.Errorf("Generated DTO should return nil for nullable int64:\n%s", code)
+	}
+
+	t.Logf("Generated DTO:\n%s", code)
 }
 
 func TestCodeGenerator_GenerateMigrationWithHasManyRelation(t *testing.T) {
-gen := NewCodeGenerator()
+	gen := NewCodeGenerator()
 
-// Test Stock entity with hasMany relations (Product hasMany Stock, Location hasMany Stock)
-// Stock should have product_id and location_id FK columns
+	// Test Stock entity with hasMany relations (Product hasMany Stock, Location hasMany Stock)
+	// Stock should have product_id and location_id FK columns
 ctx := &GenerateContext{
 EntityName: "Stock",
 TableName:  "stocks",

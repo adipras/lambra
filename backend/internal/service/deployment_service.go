@@ -681,11 +681,14 @@ func (s *DeploymentService) generateDockerFiles(project *models.Project, service
       - "host.docker.internal:host-gateway"
     networks:
       - {{.ServiceName}}-network
+      - lambra_lambra-network  # Connect to Lambra network so DB_HOST=lambra-mysql resolves
     restart: unless-stopped
 
 networks:
   {{.ServiceName}}-network:
     driver: bridge
+  lambra_lambra-network:
+    external: true
 `
 
 	dockerfileTmpl := `FROM golang:1.21-alpine AS builder

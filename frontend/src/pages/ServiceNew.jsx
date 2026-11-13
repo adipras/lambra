@@ -38,10 +38,10 @@ export const ServiceNew = () => {
     name: '',
     description: '',
     namespace: '',
-    // Database configuration
-    db_host: 'host.docker.internal',
+    // Database configuration (defaults match the local docker-compose stack)
+    db_host: 'lambra-mysql',
     db_port: 3306,
-    db_user: 'root',
+    db_user: 'lambra',
     db_password: '',
     db_name: '',
   })
@@ -190,11 +190,11 @@ export const ServiceNew = () => {
                   value={formData.db_host}
                   onChange={handleChange}
                   className="input"
-                  placeholder="localhost or host.docker.internal"
+                  placeholder="lambra-mysql"
                   required
                 />
                 <p className="mt-1 text-xs text-gray-500">
-                  Use "host.docker.internal" for local MySQL
+                  Use "lambra-mysql" for the local Docker MySQL
                 </p>
               </div>
 
@@ -229,7 +229,7 @@ export const ServiceNew = () => {
                   value={formData.db_user}
                   onChange={handleChange}
                   className="input"
-                  placeholder="root"
+                  placeholder="lambra"
                   required
                 />
               </div>
