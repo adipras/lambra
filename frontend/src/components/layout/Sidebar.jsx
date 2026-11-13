@@ -1,7 +1,9 @@
 import React from 'react'
-import { Link, useLocation } from 'react-router-dom'
-import { Home, List, Settings } from 'lucide-react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
+import { Home, List, Settings, LogOut, UserCircle2 } from 'lucide-react'
 import clsx from 'clsx'
+import { useAuthStore } from '../../stores/useAuthStore'
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: Home },
@@ -11,6 +13,16 @@ const navigation = [
 
 export const Sidebar = () => {
   const location = useLocation()
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const user = useAuthStore((s) => s.user)
+  const logout = useAuthStore((s) => s.logout)
+
+  const handleLogout = () => {
+    logout()
+    queryClient.clear()
+    navigate('/login', { replace: true })
+  }
 
   return (
     <div className="flex flex-col w-64 bg-white border-r border-gray-200">
@@ -42,6 +54,24 @@ export const Sidebar = () => {
       </nav>
 
       <div className="p-4 border-t border-gray-200">
+        {user && (
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center min-w-0">
+              <UserCircle2 className="w-8 h-8 text-gray-400 mr-2 flex-shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-900 truncate">{user.name}</p>
+                <p className="text-xs text-gray-500 truncate">@{user.username} · {user.role}</p>
+              </div>
+            </div>
+            <button
+              onClick={handleLogout}
+              title="Logout"
+              className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        )}
         <div className="text-xs text-gray-500">
           <p>Lambra Platform</p>
           <p className="mt-1">v1.0.0</p>

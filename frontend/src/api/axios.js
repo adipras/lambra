@@ -35,6 +35,17 @@ axiosInstance.interceptors.response.use(
   (error) => {
     const message = error.response?.data?.message || error.message || 'Something went wrong'
     console.error('API Error:', message)
+
+    // On 401: clear session and redirect to login — unless the failing
+    // request is the login call itself (wrong password shows inline error)
+    const isLoginRequest = error.config?.url?.includes('/auth/login')
+    const status = error.response?.status
+    if (status === 401 && !isLoginRequest && window.location.pathname !== '/login') {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      window.location.href = '/login'
+    }
+
     return Promise.reject(error)
   }
 )
