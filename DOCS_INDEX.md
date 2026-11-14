@@ -151,6 +151,27 @@ lambra/
 
 ---
 
+## 🔬 System Analysis (REA)
+
+**Evidence-based analysis produced with REA reverse-engineering tooling (digest + Evidence ID cited per finding):**
+
+1. **[docs/analysis/SYSTEM_ANALYSIS.md](docs/analysis/SYSTEM_ANALYSIS.md)** - Arsitektur & topology runtime
+   - Component inventory dan port mapping (process-capture evidence)
+   - Request lifecycle, generator pipeline, data model, API surface
+   - Security posture summary dan evidence register
+
+2. **[docs/analysis/BINARY_ANALYSIS.md](docs/analysis/BINARY_ANALYSIS.md)** - Analisis biner Go (platform + service hasil generate)
+   - Build identity (Go 1.21.13, CGO disabled), ELF notes, dependency diff
+   - Finding F-1: generated services mem-pin dependency lebih lama dari platform
+   - Rekomendasi supply-chain hardening
+
+3. **[docs/analysis/FRONTEND_ANALYSIS.md](docs/analysis/FRONTEND_ANALYSIS.md)** - JavaScript application graph
+   - Statistik semantic graph (53 file, ~10k data-flow relations)
+   - Route candidates dan struktur state management
+   - Observasi security-relevant statis
+
+---
+
 ## 📅 Maintenance Notes
 
 **Last Updated:** 2026-03-04
