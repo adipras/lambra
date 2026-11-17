@@ -7,16 +7,15 @@
 
 ## 01 — Problem
 
-Setiap permintaan sistem internal baru (form pengajuan, pencatatan aset, laporan operasional) menuntut tim membangun microservice dari nol: model, repository, service, handler, DTO, migrasi database, sampai Dockerfile. Pekerjaan ini:
+Setiap permintaan sistem baru menuntut tim membangun microservice dari nol: model, repository, service, handler, DTO, migrasi database, sampai Dockerfile. Pekerjaan ini:
 
 - **Repetitif** — 70–80% adalah boilerplate CRUD yang strukturnya selalu sama.
-- **Lambat** — [UKUR: baseline tim, contoh realistis 4–8 jam] per service sebelum bisa dites.
+- **Lambat** — kurang lebih 4–8 jam per service sebelum bisa dites.
 - **Tidak konsisten** — tiap developer punya gaya penulisan sendiri; hasil copy-paste codebase lama menyulitkan review dan maintenance.
-- **Tidak terlacak** — tidak ada jejak baku siapa membuat/mengubah/mendeploy apa dan kapan.
 
 ## 02 — Current Process
 
-1. Permintaan sistem diterima → developer menyiapkan scaffolding manual ( struktur folder, dependensi, konfigurasi DB).
+1. Permintaan sistem diterima → System Analyst menganalisa kebutuhan sistem → UI/UX mendesain sistem yang sudah didefinisikan System Analyst → developer (back-end) menyiapkan scaffolding manual ( struktur folder, dependensi, konfigurasi DB).
 2. Menulis ulang layer yang sama: model → repository → service → handler → DTO → migrasi SQL.
 3. Menulis Dockerfile & docker-compose, uji koneksi DB, debug konfigurasi.
 4. Review kode yang sebagian besar boilerplate — menyita waktu reviewer.
